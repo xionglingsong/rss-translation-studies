@@ -106,7 +106,13 @@ def reconstruct_openalex_abstract(inverted_index):
 def api_json(url):
     try:
         return json.loads(fetch_text(url, accept="application/json"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+    except (
+        urllib.error.URLError,
+        TimeoutError,
+        json.JSONDecodeError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ):
         return {}
 
 
