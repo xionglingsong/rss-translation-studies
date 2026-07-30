@@ -27,6 +27,7 @@ http://127.0.0.1:8765/translation-studies.xml
 - Metadata is fetched from Semantic Scholar, OpenAlex, and Crossref.
 - Metadata is cached in `work/metadata-cache.json` for 30 days.
 - Local generated feeds are cached in memory for 30 minutes.
+- Chinese translations are added when `TRANSLATE_TO_ZH=1` and `OPENAI_API_KEY` are set.
 
 ## Generate a Static Feed
 
@@ -35,6 +36,12 @@ python3 server.py --once public/feed.xml
 ```
 
 This writes `public/feed.xml`, `public/index.html`, and one XML file per journal.
+
+To include Chinese translations locally:
+
+```bash
+TRANSLATE_TO_ZH=1 OPENAI_API_KEY=your_api_key python3 server.py --once public/feed.xml
+```
 
 ## Host on GitHub Pages
 
@@ -72,3 +79,5 @@ https://xionglingsong.github.io/rss-translation-studies/feed.xml
 - Meta
 
 Taylor & Francis feeds are enriched through DOI metadata because their RSS descriptions usually contain only issue information. John Benjamins feeds use Crossref on GitHub Actions because the publisher RSS endpoint may reject GitHub-hosted requests. Some reviews or editorial material may not have a public abstract in any metadata source.
+
+To publish Chinese translations on GitHub Pages, add an `OPENAI_API_KEY` repository secret. The workflow already enables `TRANSLATE_TO_ZH`.

@@ -38,6 +38,9 @@ jobs:
             metadata-cache-
 
       - name: Generate static feed
+        env:
+          TRANSLATE_TO_ZH: "1"
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python server.py --once public/feed.xml
 
       - name: Configure GitHub Pages
