@@ -634,10 +634,25 @@ def generate_all_feeds():
     outputs = {}
     combined_items = []
     errors = []
+    stats = []
     for source in sources:
         try:
             feed, items = generate_source(source, cache)
             combined_items.extend(items)
+            stats.append(
+                {
+                    "slug": source["slug"],
+                    "title": source["title"],
+                    "publisher": source.get("publisher", ""),
+                    "homepage": source.get("homepage") or feed["link"],
+                    "feed": f"{source['slug']}.xml",
+                    "source_feed": source.get("source_feed", ""),
+                    "source_type": source.get("source_type", "rss"),
+                    "items": len(items),
+                    "translated": sum(1 for item in items if item.get("abstract_zh")),
+                    "weak_abstracts": sum(1 for item in items if weak_abstract(item)),
+                }
+            )
             outputs[f"{source['slug']}.xml"] = build_rss(
                 f"{source['title']} with Abstracts",
                 source.get("homepage") or feed["link"],
@@ -653,7 +668,22 @@ def generate_all_feeds():
         "Combined enhanced RSS feed for translation and interpreting studies journals.",
         combined_items,
     )
-    outputs["index.html"] = build_index(sources, errors)
+    outputs["manifest.json"] = json.dumps(
+        {
+            "title": "Translation Studies RSS",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "combined_feed": "feed.xml",
+            "journal_count": len(stats),
+            "item_count": len(combined_items),
+            "translated_count": sum(stat["translated"] for stat in stats),
+            "weak_abstract_count": sum(stat["weak_abstracts"] for stat in stats),
+            "journals": stats,
+            "errors": errors,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    outputs["index.html"] = build_index(stats, errors, len(combined_items))
     if errors:
         print("Skipped feeds:")
         for error in errors:
@@ -661,20 +691,318 @@ def generate_all_feeds():
     return outputs
 
 
-def build_index(sources, errors):
-    items = "\n".join(
-        f'<li><a href="{html.escape(source["slug"])}.xml">{html.escape(source["title"])}</a></li>'
-        for source in sources
+def weak_abstract(item):
+    abstract = item.get("abstract") or item.get("fallback_description") or ""
+    return "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract))
+
+
+def build_index(stats, errors, item_count):
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    journal_rows = "\n".join(
+        f"""
+        <tr>
+          <td>
+            <strong>{html.escape(stat["title"])}</strong>
+            <span>{html.escape(stat["publisher"])}</span>
+          </td>
+          <td>{stat["items"]}</td>
+          <td>{stat["translated"]}</td>
+          <td>{stat["weak_abstracts"]}</td>
+          <td class="actions">
+            <a class="icon-button" title="Open RSS feed" href="{html.escape(stat["feed"])}">RSS</a>
+            <button class="icon-button" title="Copy feed URL" data-copy="{html.escape(stat["feed"])}">Copy</button>
+            <a class="icon-button" title="Open journal site" href="{html.escape(stat["homepage"])}">Site</a>
+          </td>
+        </tr>
+        """
+        for stat in stats
     )
     errors_html = ""
     if errors:
-        errors_html = "<h2>Skipped During Last Build</h2><ul>" + "".join(f"<li>{html.escape(error)}</li>" for error in errors) + "</ul>"
-    return (
-        '<!doctype html><meta charset="utf-8"><title>Translation Studies RSS</title>'
-        "<h1>Translation Studies RSS</h1>"
-        '<p><a href="feed.xml">Combined feed</a></p>'
-        f"<ul>{items}</ul>{errors_html}"
-    )
+        errors_html = "<section><h2>Build Notes</h2><ul>" + "".join(f"<li>{html.escape(error)}</li>" for error in errors) + "</ul></section>"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Translation Studies RSS</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --ink: #1f2933;
+      --muted: #667085;
+      --line: #d8dee7;
+      --panel: #ffffff;
+      --bg: #f5f7fa;
+      --accent: #0b6f6a;
+      --accent-ink: #ffffff;
+      --warn: #a35200;
+      --soft: #e7f4f2;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    header {{
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }}
+    .wrap {{
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 24px;
+    }}
+    h1 {{
+      margin: 0 0 6px;
+      font-size: 28px;
+      letter-spacing: 0;
+    }}
+    h2 {{
+      margin: 0 0 12px;
+      font-size: 17px;
+      letter-spacing: 0;
+    }}
+    p {{ margin: 0; color: var(--muted); }}
+    .topline {{
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }}
+    .primary-actions {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .button, .icon-button {{
+      appearance: none;
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 8px 10px;
+      text-decoration: none;
+      font: inherit;
+      cursor: pointer;
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+    }}
+    .button.primary {{
+      border-color: var(--accent);
+      background: var(--accent);
+      color: var(--accent-ink);
+    }}
+    main.wrap {{
+      display: grid;
+      gap: 18px;
+    }}
+    .stats {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .metric {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      min-height: 84px;
+    }}
+    .metric span {{
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .metric strong {{
+      display: block;
+      font-size: 26px;
+      line-height: 1.2;
+      margin-top: 6px;
+    }}
+    section {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }}
+    .feed-url {{
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }}
+    .feed-url code {{
+      flex: 1;
+      min-width: 0;
+      display: block;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      border-radius: 6px;
+      padding: 8px 10px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+    }}
+    th, td {{
+      border-bottom: 1px solid var(--line);
+      padding: 11px 8px;
+      text-align: left;
+      vertical-align: middle;
+    }}
+    th {{
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 13px;
+    }}
+    td span {{
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    tr:last-child td {{ border-bottom: 0; }}
+    .actions {{
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }}
+    .manage-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }}
+    .manage-link {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--ink);
+      text-decoration: none;
+      background: #ffffff;
+    }}
+    .manage-link strong {{ display: block; }}
+    .manage-link span {{ color: var(--muted); font-size: 13px; }}
+    .toast {{
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      background: var(--ink);
+      color: #ffffff;
+      border-radius: 6px;
+      padding: 10px 12px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .16s ease, transform .16s ease;
+      pointer-events: none;
+    }}
+    .toast.show {{
+      opacity: 1;
+      transform: translateY(0);
+    }}
+    @media (max-width: 760px) {{
+      .wrap {{ padding: 18px; }}
+      .stats, .manage-grid {{ grid-template-columns: 1fr 1fr; }}
+      table, thead, tbody, tr, th, td {{ display: block; }}
+      thead {{ display: none; }}
+      tr {{ border-bottom: 1px solid var(--line); padding: 10px 0; }}
+      tr:last-child {{ border-bottom: 0; }}
+      td {{ border-bottom: 0; padding: 4px 0; }}
+      .actions {{ padding-top: 8px; }}
+    }}
+    @media (max-width: 520px) {{
+      .stats, .manage-grid {{ grid-template-columns: 1fr; }}
+      .feed-url {{ flex-direction: column; }}
+    }}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap topline">
+      <div>
+        <h1>Translation Studies RSS</h1>
+        <p>Enhanced journal feeds with cleaned metadata and optional Chinese abstracts.</p>
+      </div>
+      <div class="primary-actions">
+        <a class="button primary" href="feed.xml">Combined RSS</a>
+        <button class="button" data-copy="feed.xml">Copy URL</button>
+      </div>
+    </div>
+  </header>
+  <main class="wrap">
+    <div class="stats">
+      <div class="metric"><span>Journals</span><strong>{len(stats)}</strong></div>
+      <div class="metric"><span>Items</span><strong>{item_count}</strong></div>
+      <div class="metric"><span>Chinese Abstracts</span><strong>{sum(stat["translated"] for stat in stats)}</strong></div>
+      <div class="metric"><span>Needs Metadata</span><strong>{sum(stat["weak_abstracts"] for stat in stats)}</strong></div>
+    </div>
+    <section>
+      <h2>Subscribe</h2>
+      <p>Last generated: {generated_at}</p>
+      <div class="feed-url">
+        <code id="combined-url">https://xionglingsong.github.io/rss-translation-studies/feed.xml</code>
+        <button class="button" data-copy="feed.xml">Copy</button>
+      </div>
+    </section>
+    <section>
+      <h2>Journal Feeds</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Journal</th>
+            <th>Items</th>
+            <th>ZH</th>
+            <th>Weak</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {journal_rows}
+        </tbody>
+      </table>
+    </section>
+    <section>
+      <h2>Manage</h2>
+      <div class="manage-grid">
+        <a class="manage-link" href="https://github.com/xionglingsong/rss-translation-studies/edit/main/journals.json">
+          <strong>Edit journals</strong>
+          <span>Update sources in journals.json</span>
+        </a>
+        <a class="manage-link" href="https://github.com/xionglingsong/rss-translation-studies/actions/workflows/publish-feed.yml">
+          <strong>Refresh feeds</strong>
+          <span>Run the publish workflow</span>
+        </a>
+        <a class="manage-link" href="https://github.com/xionglingsong/rss-translation-studies/settings/secrets/actions">
+          <strong>Translation key</strong>
+          <span>Set DEEPSEEK_API_KEY</span>
+        </a>
+      </div>
+    </section>
+    {errors_html}
+  </main>
+  <div class="toast" id="toast">Copied</div>
+  <script>
+    const baseUrl = "https://xionglingsong.github.io/rss-translation-studies/";
+    const toast = document.getElementById("toast");
+    document.querySelectorAll("[data-copy]").forEach((button) => {{
+      button.addEventListener("click", async () => {{
+        const value = new URL(button.dataset.copy, baseUrl).href;
+        await navigator.clipboard.writeText(value);
+        toast.classList.add("show");
+        setTimeout(() => toast.classList.remove("show"), 1400);
+      }});
+    }});
+  </script>
+</body>
+</html>
+"""
 
 
 class FeedHandler(BaseHTTPRequestHandler):
