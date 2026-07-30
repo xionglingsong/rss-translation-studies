@@ -17,24 +17,26 @@ from email.utils import format_datetime, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
-SOURCE_FEED = "https://www.tandfonline.com/feed/rss/ritt20"
-FEED_TITLE = "The Interpreter and Translator Trainer: Table of Contents with Abstracts"
-USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X) NetNewsWire RSS enhancer"
-CACHE_PATH = os.environ.get(
-    "ABSTRACT_CACHE_PATH",
-    os.path.join(os.path.dirname(__file__), "work", "abstract-cache.json"),
-)
-ABSTRACT_TTL_SECONDS = 60 * 60 * 24 * 30
+BASE_DIR = os.path.dirname(__file__)
+CONFIG_PATH = os.path.join(BASE_DIR, "journals.json")
+USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X) Translation Studies RSS enhancer"
+CACHE_PATH = os.environ.get("ABSTRACT_CACHE_PATH", os.path.join(BASE_DIR, "work", "metadata-cache.json"))
+METADATA_TTL_SECONDS = 60 * 60 * 24 * 30
 FEED_TTL_SECONDS = 60 * 30
+MAX_WORKERS = int(os.environ.get("RSS_MAX_WORKERS", "8"))
+MAX_ITEMS_PER_SOURCE = int(os.environ.get("RSS_MAX_ITEMS_PER_SOURCE", "8"))
 
 NS = {
-    "rss1": "http://purl.org/rss/1.0/",
+    "atom": "http://www.w3.org/2005/Atom",
+    "content": "http://purl.org/rss/1.0/modules/content/",
     "dc": "http://purl.org/dc/elements/1.1/",
     "prism": "http://prismstandard.org/namespaces/basic/2.0/",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rss1": "http://purl.org/rss/1.0/",
 }
 
 
-def fetch_text(url, accept="*/*", timeout=20):
+def fetch_text(url, accept="*/*", timeout=5, attempts=3, use_curl=True):
     request = urllib.request.Request(
         url,
         headers={
@@ -43,26 +45,19 @@ def fetch_text(url, accept="*/*", timeout=20):
         },
     )
     last_error = None
-    for attempt in range(3):
+    for attempt in range(attempts):
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                return response.read().decode(response.headers.get_content_charset() or "utf-8", errors="replace")
+                data = response.read()
+                return data.decode(response.headers.get_content_charset() or "utf-8", errors="replace")
         except (urllib.error.URLError, TimeoutError) as error:
             last_error = error
             time.sleep(1 + attempt)
 
-    if shutil.which("curl"):
+    if use_curl and shutil.which("curl"):
         try:
             completed = subprocess.run(
-                [
-                    "curl",
-                    "-fsSL",
-                    "-A",
-                    USER_AGENT,
-                    "-H",
-                    f"Accept: {accept}",
-                    url,
-                ],
+                ["curl", "-fsSL", "--max-time", str(timeout), "-A", USER_AGENT, "-H", f"Accept: {accept}", url],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -74,23 +69,82 @@ def fetch_text(url, accept="*/*", timeout=20):
     raise last_error
 
 
-def text_of(element, path, namespaces=None):
-    found = element.find(path, namespaces or NS)
-    return (found.text or "").strip() if found is not None else ""
-
-
-def load_cache():
+def load_json(path, fallback):
     try:
-        with open(CACHE_PATH, "r", encoding="utf-8") as file:
+        with open(path, "r", encoding="utf-8") as file:
             return json.load(file)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        return fallback
 
 
-def save_cache(cache):
-    os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
-    with open(CACHE_PATH, "w", encoding="utf-8") as file:
-        json.dump(cache, file, ensure_ascii=False, indent=2, sort_keys=True)
+def save_json(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def load_journals():
+    return load_json(CONFIG_PATH, [])
+
+
+def local_name(tag):
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def find_child(element, name):
+    for child in list(element):
+        if local_name(child.tag) == name:
+            return child
+    return None
+
+
+def text_child(element, *names):
+    for name in names:
+        child = find_child(element, name)
+        if child is not None and child.text:
+            return child.text.strip()
+    return ""
+
+
+def inner_xml(element):
+    if element is None:
+        return ""
+    parts = []
+    if element.text:
+        parts.append(element.text)
+    for child in list(element):
+        parts.append(ET.tostring(child, encoding="unicode", method="xml"))
+    return "".join(parts).strip()
+
+
+def strip_html(value):
+    value = html.unescape(value or "")
+    value = re.sub(r"<br\s*/?>", "\n", value, flags=re.I)
+    value = re.sub(r"<[^>]+>", "", value)
+    value = re.sub(r"\s+", " ", value)
+    value = re.sub(r"^Abstract\s+", "", value, flags=re.I)
+    return value.strip()
+
+
+def extract_doi(*values):
+    for value in values:
+        match = re.search(r"10\.\d{4,9}/[^\s\"'<>]+", value or "", flags=re.I)
+        if match:
+            return match.group(0).rstrip(").,;").replace("?TRACK=RSS", "")
+    return ""
+
+
+def parse_date(value):
+    if not value:
+        return datetime.now(timezone.utc)
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(value)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            return datetime.now(timezone.utc)
 
 
 def reconstruct_openalex_abstract(inverted_index):
@@ -104,8 +158,24 @@ def reconstruct_openalex_abstract(inverted_index):
 
 
 def api_json(url):
+    if shutil.which("curl"):
+        try:
+            completed = subprocess.run(
+                ["curl", "-fsSL", "--max-time", "5", "-A", USER_AGENT, "-H", "Accept: application/json", url],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=7,
+            )
+            return json.loads(completed.stdout)
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            json.JSONDecodeError,
+        ):
+            return {}
     try:
-        return json.loads(fetch_text(url, accept="application/json"))
+        return json.loads(fetch_text(url, accept="application/json", attempts=1, use_curl=False))
     except (
         urllib.error.URLError,
         TimeoutError,
@@ -116,154 +186,294 @@ def api_json(url):
         return {}
 
 
-def abstract_from_semantic_scholar(doi):
+def authors_from_crossref(authors):
+    names = []
+    for author in authors or []:
+        name = " ".join(part for part in [author.get("given"), author.get("family")] if part).strip()
+        if name:
+            names.append(name)
+    return ", ".join(names)
+
+
+def crossref_date(message):
+    for key in ("published-online", "published-print", "published", "created"):
+        parts = (message.get(key) or {}).get("date-parts") or []
+        if parts and parts[0]:
+            year = parts[0][0]
+            month = parts[0][1] if len(parts[0]) > 1 else 1
+            day = parts[0][2] if len(parts[0]) > 2 else 1
+            return datetime(year, month, day, tzinfo=timezone.utc).isoformat()
+    return ""
+
+
+def metadata_from_crossref(doi):
+    data = api_json(f"https://api.crossref.org/works/{urllib.parse.quote(doi, safe='')}")
+    message = data.get("message") or {}
+    if not message:
+        return {}
+    return {
+        "title": (message.get("title") or [""])[0],
+        "creator": authors_from_crossref(message.get("author")),
+        "date": crossref_date(message),
+        "journal": (message.get("container-title") or [""])[0],
+        "volume": message.get("volume") or "",
+        "issue": message.get("issue") or "",
+        "pages": message.get("page") or "",
+        "abstract": strip_html(message.get("abstract") or ""),
+    }
+
+
+def metadata_from_semantic_scholar(doi):
     encoded = urllib.parse.quote(f"DOI:{doi}", safe="")
-    url = f"https://api.semanticscholar.org/graph/v1/paper/{encoded}?fields=abstract"
-    data = api_json(url)
-    return (data.get("abstract") or "").strip()
+    data = api_json(f"https://api.semanticscholar.org/graph/v1/paper/{encoded}?fields=title,abstract,authors,year")
+    if not data:
+        return {}
+    return {
+        "title": data.get("title") or "",
+        "creator": ", ".join(author.get("name", "") for author in data.get("authors") or [] if author.get("name")),
+        "date": f"{data.get('year')}-01-01T00:00:00+00:00" if data.get("year") else "",
+        "abstract": (data.get("abstract") or "").strip(),
+    }
 
 
-def abstract_from_openalex(doi):
+def metadata_from_openalex(doi):
     encoded = urllib.parse.quote(f"https://doi.org/{doi}", safe="")
-    url = f"https://api.openalex.org/works/{encoded}"
-    data = api_json(url)
-    return reconstruct_openalex_abstract(data.get("abstract_inverted_index"))
+    data = api_json(f"https://api.openalex.org/works/{encoded}")
+    if not data:
+        return {}
+    source = ((data.get("primary_location") or {}).get("source") or {}).get("display_name") or ""
+    authors = []
+    for authorship in data.get("authorships") or []:
+        display_name = (authorship.get("author") or {}).get("display_name")
+        if display_name:
+            authors.append(display_name)
+    return {
+        "title": data.get("title") or "",
+        "creator": ", ".join(authors),
+        "date": data.get("publication_date") or "",
+        "journal": source,
+        "abstract": reconstruct_openalex_abstract(data.get("abstract_inverted_index")),
+    }
 
 
-def fetch_abstract(doi, cache):
+def merge_missing(item, metadata):
+    for key in ("title", "creator", "date", "journal", "volume", "issue", "pages"):
+        if not item.get(key) and metadata.get(key):
+            item[key] = metadata[key]
+    if metadata.get("abstract"):
+        item["abstract"] = metadata["abstract"]
+
+
+def enrich_item(item, cache):
+    doi = item.get("doi")
+    if item.get("abstract") and item.get("creator") and item.get("date"):
+        return item
     if not doi:
-        return ""
+        return item
     cached = cache.get(doi)
-    if cached and time.time() - cached.get("fetched_at", 0) < ABSTRACT_TTL_SECONDS:
-        return cached.get("abstract", "")
+    cached_metadata = (cached or {}).get("metadata") or {}
+    needs_abstract = not item.get("abstract") and re.match(r"^Volume \d+", item.get("fallback_description") or "")
+    has_usable_cache = cached and (not needs_abstract or cached_metadata.get("abstract"))
+    if has_usable_cache and time.time() - cached.get("fetched_at", 0) < METADATA_TTL_SECONDS:
+        merge_missing(item, cached.get("metadata") or {})
+        return item
 
-    abstract = abstract_from_semantic_scholar(doi) or abstract_from_openalex(doi)
-    cache[doi] = {"abstract": abstract, "fetched_at": time.time()}
-    return abstract
+    metadata = {}
+    for source in (metadata_from_openalex, metadata_from_semantic_scholar, metadata_from_crossref):
+        data = source(doi)
+        for key, value in data.items():
+            if value and not metadata.get(key):
+                metadata[key] = value
+        if metadata.get("abstract") and metadata.get("creator") and metadata.get("date"):
+            break
+    cache[doi] = {"metadata": metadata, "fetched_at": time.time()}
+    merge_missing(item, metadata)
+    return item
 
 
-def parse_date(value):
+def absolute_url(base_url, value):
     if not value:
-        return datetime.now(timezone.utc)
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        try:
-            return parsedate_to_datetime(value)
-        except (TypeError, ValueError):
-            return datetime.now(timezone.utc)
+        return ""
+    return urllib.parse.urljoin(base_url, value)
 
 
-def clean_html_description(value):
-    value = html.unescape(value or "")
-    value = re.sub(r"<br\s*/?>", "\n", value, flags=re.I)
-    value = re.sub(r"<[^>]+>", "", value)
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def parse_tandf_feed(xml_text):
-    root = ET.fromstring(xml_text)
+def parse_rss1(root, source):
     channel = root.find("rss1:channel", NS)
     items = []
     for item in root.findall("rss1:item", NS):
-        doi = text_of(item, "prism:doi")
-        if not doi:
-            identifier = text_of(item, "dc:identifier")
-            doi = identifier.replace("doi:", "", 1).strip()
+        description = strip_html(text_child(item, "description") or inner_xml(find_child(item, "encoded")))
+        link = absolute_url(source["source_feed"], text_child(item, "link"))
+        doi = text_child(item, "doi") or extract_doi(text_child(item, "identifier"), link)
         items.append(
             {
-                "title": text_of(item, "rss1:title"),
-                "link": text_of(item, "rss1:link"),
+                "title": text_child(item, "title"),
+                "link": link,
                 "doi": doi,
-                "creator": text_of(item, "dc:creator"),
-                "date": text_of(item, "dc:date"),
-                "fallback_description": clean_html_description(text_of(item, "rss1:description")),
-                "volume": text_of(item, "prism:volume"),
-                "issue": text_of(item, "prism:number"),
-                "pages": "-".join(
-                    part
-                    for part in [text_of(item, "prism:startingPage"), text_of(item, "prism:endingPage")]
-                    if part
-                ),
+                "creator": text_child(item, "creator"),
+                "date": text_child(item, "date"),
+                "fallback_description": description,
+                "abstract": "",
+                "journal": source["title"],
+                "source_slug": source["slug"],
+                "source_title": source["title"],
+                "volume": text_child(item, "volume"),
+                "issue": text_child(item, "number"),
+                "pages": "-".join(part for part in [text_child(item, "startingPage"), text_child(item, "endingPage")] if part),
             }
         )
     return {
-        "title": text_of(channel, "rss1:title") if channel is not None else FEED_TITLE,
-        "link": text_of(channel, "rss1:link") if channel is not None else SOURCE_FEED,
-        "description": text_of(channel, "rss1:description") if channel is not None else "",
+        "title": text_child(channel, "title") if channel is not None else source["title"],
+        "link": text_child(channel, "link") if channel is not None else source["homepage"],
+        "description": text_child(channel, "description") if channel is not None else source.get("description", ""),
         "items": items,
     }
+
+
+def parse_rss2(root, source):
+    channel = find_child(root, "channel")
+    items = []
+    for item in list(channel or []):
+        if local_name(item.tag) != "item":
+            continue
+        raw_description = text_child(item, "description") or inner_xml(find_child(item, "encoded"))
+        description = strip_html(raw_description)
+        creator = text_child(item, "creator")
+        if source.get("split_description_author") and not creator and "<br" in raw_description.lower():
+            author_part, abstract_part = re.split(r"<br\s*/?>", raw_description, maxsplit=1, flags=re.I)
+            creator = strip_html(author_part)
+            description = strip_html(abstract_part)
+        link = text_child(item, "link")
+        guid = text_child(item, "guid")
+        doi = text_child(item, "doi") or extract_doi(text_child(item, "identifier"), guid, link, description)
+        items.append(
+            {
+                "title": text_child(item, "title"),
+                "link": absolute_url(source["source_feed"], link or guid),
+                "doi": doi,
+                "creator": creator,
+                "date": text_child(item, "date") or text_child(item, "pubDate"),
+                "fallback_description": description,
+                "abstract": description if len(description.split()) > 20 else "",
+                "journal": source["title"],
+                "source_slug": source["slug"],
+                "source_title": source["title"],
+                "volume": text_child(item, "volume"),
+                "issue": text_child(item, "number") or text_child(item, "issue"),
+                "pages": text_child(item, "pages"),
+            }
+        )
+    return {
+        "title": text_child(channel, "title") if channel is not None else source["title"],
+        "link": text_child(channel, "link") if channel is not None else source["homepage"],
+        "description": text_child(channel, "description") if channel is not None else source.get("description", ""),
+        "items": items,
+    }
+
+
+def parse_atom(root, source):
+    items = []
+    for entry in root.findall("atom:entry", NS):
+        link = ""
+        for link_element in entry.findall("atom:link", NS):
+            if link_element.get("rel") in (None, "alternate"):
+                link = link_element.get("href", "")
+                break
+        summary = strip_html(text_child(entry, "summary") or text_child(entry, "content"))
+        doi = extract_doi(text_child(entry, "id"), link, summary)
+        items.append(
+            {
+                "title": text_child(entry, "title"),
+                "link": absolute_url(source["source_feed"], link),
+                "doi": doi,
+                "creator": text_child(find_child(entry, "author") or entry, "name"),
+                "date": text_child(entry, "updated") or text_child(entry, "published"),
+                "fallback_description": summary,
+                "abstract": summary if len(summary.split()) > 20 else "",
+                "journal": source["title"],
+                "source_slug": source["slug"],
+                "source_title": source["title"],
+                "volume": "",
+                "issue": "",
+                "pages": "",
+            }
+        )
+    return {
+        "title": text_child(root, "title") or source["title"],
+        "link": source["homepage"],
+        "description": source.get("description", ""),
+        "items": items,
+    }
+
+
+def parse_source_feed(source):
+    xml_text = fetch_text(source["source_feed"], accept="application/rss+xml, application/atom+xml, application/xml, text/xml")
+    root = ET.fromstring(xml_text.lstrip("\ufeff"))
+    root_name = local_name(root.tag)
+    if root_name == "RDF":
+        return parse_rss1(root, source)
+    if root_name == "rss":
+        return parse_rss2(root, source)
+    if root_name == "feed":
+        return parse_atom(root, source)
+    raise ValueError(f"Unsupported feed format for {source['slug']}: {root.tag}")
 
 
 def cdata(value):
     return "<![CDATA[" + (value or "").replace("]]>", "]]]]><![CDATA[>") + "]]>"
 
 
-def item_body(item, abstract):
+def item_body(item):
     meta = []
-    if item["creator"]:
+    if item.get("source_title"):
+        meta.append(f"<p><strong>Journal:</strong> {html.escape(item['source_title'])}</p>")
+    if item.get("creator"):
         meta.append(f"<p><strong>Authors:</strong> {html.escape(item['creator'])}</p>")
     issue_bits = []
-    if item["volume"]:
+    if item.get("volume"):
         issue_bits.append(f"Volume {html.escape(item['volume'])}")
-    if item["issue"]:
+    if item.get("issue"):
         issue_bits.append(f"Issue {html.escape(item['issue'])}")
-    if item["pages"]:
+    if item.get("pages"):
         issue_bits.append(f"Pages {html.escape(item['pages'])}")
     if issue_bits:
         meta.append(f"<p><strong>Issue:</strong> {', '.join(issue_bits)}</p>")
-    if item["doi"]:
+    if item.get("doi"):
         meta.append(f"<p><strong>DOI:</strong> {html.escape(item['doi'])}</p>")
 
-    if abstract:
-        meta.insert(0, f"<p>{html.escape(abstract)}</p>")
-    elif item["fallback_description"]:
-        meta.insert(0, f"<p>{html.escape(item['fallback_description'])}</p>")
-    else:
-        meta.insert(0, "<p>No abstract found in public metadata yet.</p>")
+    abstract = item.get("abstract") or item.get("fallback_description") or "No abstract found in public metadata yet."
+    meta.insert(0, f"<p>{html.escape(abstract)}</p>")
     return "\n".join(meta)
 
 
-def generate_feed_xml():
-    source_xml = fetch_text(SOURCE_FEED, accept="application/rss+xml, application/xml, text/xml")
-    cache = load_cache()
-    return build_rss(parse_tandf_feed(source_xml), cache)
-
-
-def build_rss(feed, cache):
-    def enrich(item):
-        return item, fetch_abstract(item["doi"], cache)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        enriched = list(executor.map(enrich, feed["items"]))
-
-    save_cache(cache)
+def build_rss(title, link, description, items):
     now = format_datetime(datetime.now(timezone.utc))
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/">',
         "<channel>",
-        f"<title>{html.escape(FEED_TITLE)}</title>",
-        f"<link>{html.escape(feed['link'])}</link>",
-        f"<description>{html.escape(feed['description'])}</description>",
+        f"<title>{html.escape(title)}</title>",
+        f"<link>{html.escape(link)}</link>",
+        f"<description>{html.escape(description)}</description>",
         f"<lastBuildDate>{now}</lastBuildDate>",
-        "<ttl>30</ttl>",
+        "<ttl>360</ttl>",
     ]
-
-    for item, abstract in enriched:
-        body = item_body(item, abstract)
-        pub_date = format_datetime(parse_date(item["date"]))
-        guid = item["doi"] or item["link"]
+    for item in sorted(items, key=lambda item: parse_date(item.get("date")), reverse=True):
+        body = item_body(item)
+        pub_date = format_datetime(parse_date(item.get("date")))
+        guid = item.get("doi") or item.get("link") or item.get("title")
+        title_text = item.get("title") or "Untitled"
+        if item.get("source_title") and not title_text.startswith(item["source_title"]):
+            title_text = f"[{item['source_title']}] {title_text}"
         lines.extend(
             [
                 "<item>",
-                f"<title>{html.escape(item['title'])}</title>",
-                f"<link>{html.escape(item['link'])}</link>",
+                f"<title>{html.escape(title_text)}</title>",
+                f"<link>{html.escape(item.get('link') or '')}</link>",
                 f"<guid isPermaLink=\"false\">{html.escape(guid)}</guid>",
                 f"<pubDate>{pub_date}</pubDate>",
                 f"<description>{cdata(body)}</description>",
                 f"<content:encoded>{cdata(body)}</content:encoded>",
-                f"<dc:creator>{html.escape(item['creator'])}</dc:creator>" if item["creator"] else "",
+                f"<dc:creator>{html.escape(item['creator'])}</dc:creator>" if item.get("creator") else "",
                 "</item>",
             ]
         )
@@ -271,8 +481,65 @@ def build_rss(feed, cache):
     return "\n".join(line for line in lines if line)
 
 
+def generate_source(source, cache):
+    feed = parse_source_feed(source)
+    items_to_enrich = feed["items"][: source.get("max_items", MAX_ITEMS_PER_SOURCE)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        items = list(executor.map(lambda item: enrich_item(item, cache), items_to_enrich))
+    return feed, items
+
+
+def generate_all_feeds():
+    cache = load_json(CACHE_PATH, {})
+    sources = load_journals()
+    outputs = {}
+    combined_items = []
+    errors = []
+    for source in sources:
+        try:
+            feed, items = generate_source(source, cache)
+            combined_items.extend(items)
+            outputs[f"{source['slug']}.xml"] = build_rss(
+                f"{source['title']} with Abstracts",
+                source.get("homepage") or feed["link"],
+                source.get("description") or feed["description"],
+                items,
+            )
+        except Exception as error:
+            errors.append(f"{source['slug']}: {error}")
+    save_json(CACHE_PATH, cache)
+    outputs["feed.xml"] = build_rss(
+        "Translation Studies Journals with Abstracts",
+        "https://xionglingsong.github.io/rss-translation-studies/",
+        "Combined enhanced RSS feed for translation and interpreting studies journals.",
+        combined_items,
+    )
+    outputs["index.html"] = build_index(sources, errors)
+    if errors:
+        print("Skipped feeds:")
+        for error in errors:
+            print(f"- {error}")
+    return outputs
+
+
+def build_index(sources, errors):
+    items = "\n".join(
+        f'<li><a href="{html.escape(source["slug"])}.xml">{html.escape(source["title"])}</a></li>'
+        for source in sources
+    )
+    errors_html = ""
+    if errors:
+        errors_html = "<h2>Skipped During Last Build</h2><ul>" + "".join(f"<li>{html.escape(error)}</li>" for error in errors) + "</ul>"
+    return (
+        '<!doctype html><meta charset="utf-8"><title>Translation Studies RSS</title>'
+        "<h1>Translation Studies RSS</h1>"
+        '<p><a href="feed.xml">Combined feed</a></p>'
+        f"<ul>{items}</ul>{errors_html}"
+    )
+
+
 class FeedHandler(BaseHTTPRequestHandler):
-    rendered_feed = None
+    rendered = {}
     rendered_at = 0
 
     def log_message(self, fmt, *args):
@@ -288,35 +555,50 @@ class FeedHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path in ("/", "/feed.xml"):
-            try:
-                force = urllib.parse.parse_qs(parsed.query).get("refresh") == ["1"]
-                if force or not self.rendered_feed or time.time() - self.rendered_at > FEED_TTL_SECONDS:
-                    self.__class__.rendered_feed = generate_feed_xml()
-                    self.__class__.rendered_at = time.time()
-                self.send_text(200, self.rendered_feed, "application/rss+xml")
-            except Exception as error:
-                self.send_text(502, f"Feed proxy error: {error}\n", "text/plain")
-            return
         if parsed.path == "/health":
             self.send_text(200, "ok\n", "text/plain")
+            return
+        name = parsed.path.strip("/") or "feed.xml"
+        if name.endswith(".xml") or name == "index.html":
+            try:
+                force = urllib.parse.parse_qs(parsed.query).get("refresh") == ["1"]
+                if force or not self.rendered or time.time() - self.rendered_at > FEED_TTL_SECONDS:
+                    self.__class__.rendered = generate_all_feeds()
+                    self.__class__.rendered_at = time.time()
+                body = self.rendered.get(name)
+                if body is None:
+                    self.send_text(404, "Not found\n", "text/plain")
+                    return
+                content_type = "text/html" if name == "index.html" else "application/rss+xml"
+                self.send_text(200, body, content_type)
+            except Exception as error:
+                self.send_text(502, f"Feed proxy error: {error}\n", "text/plain")
             return
         self.send_text(404, "Not found\n", "text/plain")
 
 
+def write_static_site(output_path):
+    output_dir = os.path.dirname(os.path.abspath(output_path))
+    os.makedirs(output_dir, exist_ok=True)
+    outputs = generate_all_feeds()
+    for name, content in outputs.items():
+        with open(os.path.join(output_dir, name), "w", encoding="utf-8") as file:
+            file.write(content)
+            file.write("\n")
+    with open(os.path.join(output_dir, ".nojekyll"), "w", encoding="utf-8") as file:
+        file.write("")
+    print(f"Wrote {len(outputs)} files to {output_dir}")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Taylor & Francis RSS abstract proxy for NetNewsWire")
-    parser.add_argument("--once", metavar="PATH", help="write one static RSS file and exit")
+    parser = argparse.ArgumentParser(description="Enhanced RSS feeds for translation studies journals")
+    parser.add_argument("--once", metavar="PATH", help="write static RSS files into PATH's directory and exit")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8765, type=int)
     args = parser.parse_args()
 
     if args.once:
-        os.makedirs(os.path.dirname(os.path.abspath(args.once)), exist_ok=True)
-        with open(args.once, "w", encoding="utf-8") as file:
-            file.write(generate_feed_xml())
-            file.write("\n")
-        print(f"Wrote {args.once}")
+        write_static_site(args.once)
         return
 
     server = ThreadingHTTPServer((args.host, args.port), FeedHandler)

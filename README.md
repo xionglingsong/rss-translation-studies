@@ -1,6 +1,6 @@
-# Taylor & Francis RSS Abstract Proxy
+# Translation Studies RSS
 
-This proxy turns the Taylor & Francis table-of-contents feed for `ritt20` into an RSS 2.0 feed with abstracts when public metadata is available.
+Enhanced RSS feeds for translation and interpreting studies journals. The generator reads official journal RSS feeds, enriches entries with public DOI metadata when needed, and publishes both a combined feed and per-journal feeds.
 
 ## Run Locally
 
@@ -14,24 +14,27 @@ Then subscribe to this URL in NetNewsWire:
 http://127.0.0.1:8765/feed.xml
 ```
 
-To force a refresh in the browser:
+Per-journal feeds are also available locally, for example:
 
 ```text
-http://127.0.0.1:8765/feed.xml?refresh=1
+http://127.0.0.1:8765/target.xml
+http://127.0.0.1:8765/translation-studies.xml
 ```
 
 ## Notes
 
-- Source feed: `https://www.tandfonline.com/feed/rss/ritt20`
-- Abstracts are fetched from Semantic Scholar first, then OpenAlex.
-- Abstracts are cached in `work/abstract-cache.json` for 30 days.
-- The generated feed is cached in memory for 30 minutes.
+- Journals are configured in `journals.json`.
+- Metadata is fetched from Semantic Scholar, OpenAlex, and Crossref.
+- Metadata is cached in `work/metadata-cache.json` for 30 days.
+- Local generated feeds are cached in memory for 30 minutes.
 
 ## Generate a Static Feed
 
 ```bash
 python3 server.py --once public/feed.xml
 ```
+
+This writes `public/feed.xml`, `public/index.html`, and one XML file per journal.
 
 ## Host on GitHub Pages
 
@@ -46,3 +49,9 @@ https://YOUR-GITHUB-USERNAME.github.io/YOUR-REPOSITORY/feed.xml
 ```
 
 The included workflow refreshes the feed every 6 hours and can also be run manually.
+
+For this repository, the combined feed is:
+
+```text
+https://xionglingsong.github.io/rss-translation-studies/feed.xml
+```

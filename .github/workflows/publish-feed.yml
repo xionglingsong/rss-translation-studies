@@ -32,16 +32,13 @@ jobs:
       - name: Restore abstract cache
         uses: actions/cache@v4
         with:
-          path: work/abstract-cache.json
-          key: abstract-cache-${{ github.run_id }}
+          path: work/metadata-cache.json
+          key: metadata-cache-${{ github.run_id }}
           restore-keys: |
-            abstract-cache-
+            metadata-cache-
 
       - name: Generate static feed
-        run: |
-          python server.py --once public/feed.xml
-          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>RSS Feed</title><p><a href="feed.xml">RSS feed</a></p>' > public/index.html
-          touch public/.nojekyll
+        run: python server.py --once public/feed.xml
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

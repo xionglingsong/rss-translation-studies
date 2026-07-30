@@ -1,0 +1,99 @@
+[
+  {
+    "slug": "translation-studies",
+    "title": "Translation Studies",
+    "publisher": "Taylor & Francis",
+    "homepage": "https://www.tandfonline.com/journals/rtrs20",
+    "source_feed": "https://www.tandfonline.com/feed/rss/rtrs20",
+    "description": "Routledge journal Translation Studies."
+  },
+  {
+    "slug": "perspectives",
+    "title": "Perspectives",
+    "publisher": "Taylor & Francis",
+    "homepage": "https://www.tandfonline.com/journals/rmps20",
+    "source_feed": "https://www.tandfonline.com/feed/rss/rmps20",
+    "description": "Perspectives: Studies in Translation Theory and Practice."
+  },
+  {
+    "slug": "the-translator",
+    "title": "The Translator",
+    "publisher": "Taylor & Francis",
+    "homepage": "https://www.tandfonline.com/journals/rtrn20",
+    "source_feed": "https://www.tandfonline.com/feed/rss/rtrn20",
+    "description": "The Translator."
+  },
+  {
+    "slug": "interpreter-translator-trainer",
+    "title": "The Interpreter and Translator Trainer",
+    "publisher": "Taylor & Francis",
+    "homepage": "https://www.tandfonline.com/journals/ritt20",
+    "source_feed": "https://www.tandfonline.com/feed/rss/ritt20",
+    "description": "The Interpreter and Translator Trainer."
+  },
+  {
+    "slug": "asia-pacific-translation",
+    "title": "Asia Pacific Translation and Intercultural Studies",
+    "publisher": "Taylor & Francis",
+    "homepage": "https://www.tandfonline.com/journals/rtis20",
+    "source_feed": "https://www.tandfonline.com/feed/rss/rtis20",
+    "description": "Asia Pacific Translation and Intercultural Studies."
+  },
+  {
+    "slug": "target",
+    "title": "Target",
+    "publisher": "John Benjamins",
+    "homepage": "https://www.jbe-platform.com/content/journals/15699986",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/15699986/latestarticles",
+    "description": "Target. International Journal of Translation Studies."
+  },
+  {
+    "slug": "interpreting",
+    "title": "Interpreting",
+    "publisher": "John Benjamins",
+    "homepage": "https://www.jbe-platform.com/content/journals/1569982x",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/1569982x/latestarticles",
+    "description": "Interpreting: International Journal of Research and Practice in Interpreting."
+  },
+  {
+    "slug": "translation-interpreting-studies",
+    "title": "Translation and Interpreting Studies",
+    "publisher": "John Benjamins",
+    "homepage": "https://www.jbe-platform.com/content/journals/18762700",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/18762700/latestarticles",
+    "description": "Translation and Interpreting Studies."
+  },
+  {
+    "slug": "translation-spaces",
+    "title": "Translation Spaces",
+    "publisher": "John Benjamins",
+    "homepage": "https://www.jbe-platform.com/content/journals/2211372x",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/2211372x/latestarticles",
+    "description": "Translation Spaces."
+  },
+  {
+    "slug": "babel",
+    "title": "Babel",
+    "publisher": "John Benjamins",
+    "homepage": "https://www.jbe-platform.com/content/journals/15699668",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/15699668/latestarticles",
+    "description": "Babel: Revue internationale de la traduction / International Journal of Translation."
+  },
+  {
+    "slug": "forum",
+    "title": "FORUM",
+    "publisher": "John Benjamins",
+    "homepage": "https://www.jbe-platform.com/content/journals/2451909x",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/2451909x/latestarticles",
+    "description": "FORUM: International Journal of Interpretation and Translation."
+  },
+  {
+    "slug": "meta",
+    "title": "Meta",
+    "publisher": "Érudit",
+    "homepage": "https://www.erudit.org/en/journals/meta/",
+    "source_feed": "https://www.erudit.org/en/journals/meta/rss.xml",
+    "split_description_author": true,
+    "description": "Meta: Translators' Journal."
+  }
+]
