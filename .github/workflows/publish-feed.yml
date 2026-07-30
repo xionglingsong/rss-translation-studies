@@ -40,7 +40,7 @@ jobs:
       - name: Generate static feed
         env:
           TRANSLATE_TO_ZH: "1"
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: python server.py --once public/feed.xml
 
       - name: Configure GitHub Pages

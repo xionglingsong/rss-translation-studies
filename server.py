@@ -23,8 +23,13 @@ CONFIG_PATH = os.path.join(BASE_DIR, "journals.json")
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X) Translation Studies RSS enhancer"
 CACHE_PATH = os.environ.get("ABSTRACT_CACHE_PATH", os.path.join(BASE_DIR, "work", "metadata-cache.json"))
 TRANSLATE_TO_ZH = os.environ.get("TRANSLATE_TO_ZH", "").lower() in ("1", "true", "yes")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_TRANSLATION_MODEL = os.environ.get("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_TRANSLATION_MODEL = os.environ.get("DEEPSEEK_TRANSLATION_MODEL", "deepseek-v4-flash")
+TRANSLATION_PROMPT = (
+    "作为一名精通简体中文、口笔译学科知识、统计学、心理学的专业翻译家，"
+    "请将所提供的文本准确地翻译为简体中文。请仅回复翻译后的文本，不要任何其他内容。"
+    "【待翻译文本】如下"
+)
 METADATA_TTL_SECONDS = 60 * 60 * 24 * 30
 FEED_TTL_SECONDS = 60 * 30
 MAX_WORKERS = int(os.environ.get("RSS_MAX_WORKERS", "8"))
@@ -340,24 +345,22 @@ def enrich_item(item, cache):
 
 
 def translate_to_zh(text):
-    if not TRANSLATE_TO_ZH or not OPENAI_API_KEY or not text:
+    if not TRANSLATE_TO_ZH or not DEEPSEEK_API_KEY or not text:
         return ""
     payload = {
-        "model": OPENAI_TRANSLATION_MODEL,
+        "model": DEEPSEEK_TRANSLATION_MODEL,
         "messages": [
-            {
-                "role": "system",
-                "content": "Translate academic abstracts into clear Simplified Chinese. Preserve terminology, numbers, citations, and proper nouns. Return only the translation.",
-            },
-            {"role": "user", "content": text},
+            {"role": "user", "content": f"{TRANSLATION_PROMPT}\n\n{text}"},
         ],
         "temperature": 0,
+        "thinking": {"type": "disabled"},
+        "stream": False,
     }
     try:
         data = post_json(
-            "https://api.openai.com/v1/chat/completions",
+            "https://api.deepseek.com/chat/completions",
             payload,
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
             timeout=30,
         )
         return data["choices"][0]["message"]["content"].strip()
@@ -617,7 +620,7 @@ def generate_source(source, cache):
     items_to_enrich = feed["items"][: source.get("max_items", MAX_ITEMS_PER_SOURCE)]
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         items = list(executor.map(lambda item: enrich_item(item, cache), items_to_enrich))
-    if TRANSLATE_TO_ZH and OPENAI_API_KEY:
+    if TRANSLATE_TO_ZH and DEEPSEEK_API_KEY:
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, MAX_WORKERS)) as executor:
             items = list(executor.map(lambda item: translate_item(item, cache), items))
     return feed, items
@@ -625,8 +628,8 @@ def generate_source(source, cache):
 
 def generate_all_feeds():
     cache = load_json(CACHE_PATH, {})
-    if TRANSLATE_TO_ZH and not OPENAI_API_KEY:
-        print("TRANSLATE_TO_ZH is enabled, but OPENAI_API_KEY is not set. Skipping Chinese translations.")
+    if TRANSLATE_TO_ZH and not DEEPSEEK_API_KEY:
+        print("TRANSLATE_TO_ZH is enabled, but DEEPSEEK_API_KEY is not set. Skipping Chinese translations.")
     sources = load_journals()
     outputs = {}
     combined_items = []
