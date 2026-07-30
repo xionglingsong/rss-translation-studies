@@ -55,3 +55,20 @@ For this repository, the combined feed is:
 ```text
 https://xionglingsong.github.io/rss-translation-studies/feed.xml
 ```
+
+## Included Journals
+
+- Translation Studies
+- Perspectives
+- The Translator
+- The Interpreter and Translator Trainer
+- Asia Pacific Translation and Intercultural Studies
+- Target
+- Interpreting
+- Translation and Interpreting Studies
+- Translation Spaces
+- Babel
+- FORUM
+- Meta
+
+Taylor & Francis feeds are enriched through DOI metadata because their RSS descriptions usually contain only issue information. John Benjamins feeds use Crossref on GitHub Actions because the publisher RSS endpoint may reject GitHub-hosted requests. Some reviews or editorial material may not have a public abstract in any metadata source.

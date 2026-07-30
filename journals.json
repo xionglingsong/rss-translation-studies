@@ -43,6 +43,8 @@
     "slug": "target",
     "title": "Target",
     "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "1569-9986",
     "homepage": "https://www.jbe-platform.com/content/journals/15699986",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/15699986/latestarticles",
     "description": "Target. International Journal of Translation Studies."
@@ -51,6 +53,8 @@
     "slug": "interpreting",
     "title": "Interpreting",
     "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "1569-982X",
     "homepage": "https://www.jbe-platform.com/content/journals/1569982x",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/1569982x/latestarticles",
     "description": "Interpreting: International Journal of Research and Practice in Interpreting."
@@ -59,6 +63,8 @@
     "slug": "translation-interpreting-studies",
     "title": "Translation and Interpreting Studies",
     "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "1876-2700",
     "homepage": "https://www.jbe-platform.com/content/journals/18762700",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/18762700/latestarticles",
     "description": "Translation and Interpreting Studies."
@@ -67,6 +73,8 @@
     "slug": "translation-spaces",
     "title": "Translation Spaces",
     "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "2211-372X",
     "homepage": "https://www.jbe-platform.com/content/journals/2211372x",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/2211372x/latestarticles",
     "description": "Translation Spaces."
@@ -75,6 +83,8 @@
     "slug": "babel",
     "title": "Babel",
     "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "1569-9668",
     "homepage": "https://www.jbe-platform.com/content/journals/15699668",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/15699668/latestarticles",
     "description": "Babel: Revue internationale de la traduction / International Journal of Translation."
@@ -83,6 +93,8 @@
     "slug": "forum",
     "title": "FORUM",
     "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "2451-909X",
     "homepage": "https://www.jbe-platform.com/content/journals/2451909x",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/2451909x/latestarticles",
     "description": "FORUM: International Journal of Interpretation and Translation."

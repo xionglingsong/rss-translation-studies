@@ -406,6 +406,8 @@ def parse_atom(root, source):
 
 
 def parse_source_feed(source):
+    if source.get("source_type") == "crossref":
+        return parse_crossref_source(source)
     xml_text = fetch_text(source["source_feed"], accept="application/rss+xml, application/atom+xml, application/xml, text/xml")
     root = ET.fromstring(xml_text.lstrip("\ufeff"))
     root_name = local_name(root.tag)
@@ -416,6 +418,42 @@ def parse_source_feed(source):
     if root_name == "feed":
         return parse_atom(root, source)
     raise ValueError(f"Unsupported feed format for {source['slug']}: {root.tag}")
+
+
+def parse_crossref_source(source):
+    rows = source.get("max_items", MAX_ITEMS_PER_SOURCE)
+    issn = urllib.parse.quote(source["issn"], safe="")
+    url = f"https://api.crossref.org/journals/{issn}/works?sort=published&order=desc&rows={rows}&filter=type:journal-article"
+    data = api_json(url)
+    items = []
+    for work in (data.get("message") or {}).get("items") or []:
+        doi = work.get("DOI") or ""
+        title = strip_html((work.get("title") or [""])[0])
+        abstract = strip_html(work.get("abstract") or "")
+        link = work.get("URL") or (f"https://doi.org/{doi}" if doi else source["homepage"])
+        items.append(
+            {
+                "title": title,
+                "link": link,
+                "doi": doi,
+                "creator": authors_from_crossref(work.get("author")),
+                "date": crossref_date(work),
+                "fallback_description": abstract,
+                "abstract": abstract,
+                "journal": source["title"],
+                "source_slug": source["slug"],
+                "source_title": source["title"],
+                "volume": work.get("volume") or "",
+                "issue": work.get("issue") or "",
+                "pages": work.get("page") or "",
+            }
+        )
+    return {
+        "title": source["title"],
+        "link": source["homepage"],
+        "description": source.get("description", ""),
+        "items": items,
+    }
 
 
 def cdata(value):
