@@ -753,7 +753,7 @@ def generate_all_feeds():
         ensure_ascii=False,
         indent=2,
     )
-    outputs["index.html"] = build_index(stats, errors, len(combined_items))
+    outputs["index.html"] = build_public_index(stats, errors, len(combined_items))
     if errors:
         print("Skipped feeds:")
         for error in errors:
@@ -766,99 +766,171 @@ def weak_abstract(item):
     return not abstract or "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract))
 
 
-def build_index(stats, errors, item_count):
+def build_public_index(stats, errors, item_count):
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    journal_rows = "\n".join(
-        f"""
-        <tr>
-          <td>
-            <strong>{html.escape(stat["title"])}</strong>
-            <span>{html.escape(stat["publisher"])}</span>
-          </td>
-          <td>{stat["items"]}</td>
-          <td>{stat["translated"]}</td>
-          <td>{stat["weak_abstracts"]}</td>
-          <td class="actions">
-            <a class="icon-button" title="Open RSS feed" href="{html.escape(stat["feed"])}">RSS</a>
-            <button class="icon-button" title="Copy feed URL" data-copy="{html.escape(stat["feed"])}">Copy</button>
-            <a class="icon-button" title="Open journal site" href="{html.escape(stat["homepage"])}">Site</a>
-          </td>
-        </tr>
-        """
-        for stat in stats
-    )
+    weak_total = sum(stat["weak_abstracts"] for stat in stats)
+    translated_total = sum(stat["translated"] for stat in stats)
+    journal_rows = []
+    for stat in stats:
+        quality_class = "good" if stat["weak_abstracts"] == 0 else "watch"
+        quality_label = "完整" if stat["weak_abstracts"] == 0 else f"{stat['weak_abstracts']} 条待补"
+        journal_rows.append(
+            f"""
+            <tr>
+              <td>
+                <strong>{html.escape(stat["title"])}</strong>
+                <span>{html.escape(stat["publisher"])}</span>
+              </td>
+              <td><span class="number">{stat["items"]}</span></td>
+              <td><span class="number">{stat["translated"]}</span></td>
+              <td><span class="quality {quality_class}">{quality_label}</span></td>
+              <td class="actions">
+                <a class="icon-button" title="打开单刊 RSS" href="{html.escape(stat["feed"])}" aria-label="打开单刊 RSS">RSS</a>
+                <button class="icon-button" title="复制单刊订阅地址" data-copy="{html.escape(stat["feed"])}" aria-label="复制单刊订阅地址">Copy</button>
+                <a class="icon-button" title="打开期刊网站" href="{html.escape(stat["homepage"])}" aria-label="打开期刊网站">Site</a>
+              </td>
+            </tr>
+            """
+        )
     errors_html = ""
     if errors:
-        errors_html = "<section><h2>Build Notes</h2><ul>" + "".join(f"<li>{html.escape(error)}</li>" for error in errors) + "</ul></section>"
+        errors_html = (
+            '<section class="notice"><h2>生成提示</h2><ul>'
+            + "".join(f"<li>{html.escape(error)}</li>" for error in errors)
+            + "</ul></section>"
+        )
     return f"""<!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Translation Studies RSS</title>
+  <title>翻译学期刊 RSS 订阅</title>
+  <meta name="description" content="翻译学与口译研究期刊的增强 RSS 订阅源，自动汇总最新文章并补全摘要、作者、DOI 和页码。">
   <style>
     :root {{
       color-scheme: light;
-      --ink: #1f2933;
-      --muted: #667085;
-      --line: #d8dee7;
-      --panel: #ffffff;
-      --bg: #f5f7fa;
-      --accent: #0b6f6a;
+      --ink: #243036;
+      --muted: #68757b;
+      --line: #d9d2c2;
+      --panel: #fffdf7;
+      --panel-strong: #ffffff;
+      --bg: #f4efe4;
+      --accent: #087f73;
       --accent-ink: #ffffff;
-      --warn: #a35200;
-      --soft: #e7f4f2;
+      --ruby: #a6384b;
+      --blue: #315f8f;
+      --gold: #b57919;
+      --soft: #e9f4f1;
+      --paper: #fbf8ef;
+      --shadow: 0 18px 48px rgba(63, 52, 34, .12);
     }}
     * {{ box-sizing: border-box; }}
+    html {{ scroll-behavior: smooth; }}
     body {{
       margin: 0;
-      background: var(--bg);
+      background:
+        linear-gradient(90deg, rgba(36, 48, 54, .035) 1px, transparent 1px),
+        linear-gradient(rgba(36, 48, 54, .025) 1px, transparent 1px),
+        var(--bg);
+      background-size: 34px 34px;
       color: var(--ink);
-      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 15px/1.55 "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", serif;
     }}
-    header {{
-      background: #ffffff;
+    a {{ color: inherit; }}
+    code {{ font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
+    header.hero {{
+      background:
+        linear-gradient(135deg, rgba(8, 127, 115, .12), transparent 42%),
+        linear-gradient(315deg, rgba(166, 56, 75, .11), transparent 38%),
+        var(--paper);
       border-bottom: 1px solid var(--line);
     }}
     .wrap {{
-      max-width: 1120px;
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 24px;
+      padding: 26px;
     }}
     h1 {{
-      margin: 0 0 6px;
-      font-size: 28px;
+      margin: 0;
+      font-size: clamp(36px, 6vw, 76px);
+      line-height: .96;
       letter-spacing: 0;
     }}
     h2 {{
-      margin: 0 0 12px;
-      font-size: 17px;
+      margin: 0 0 14px;
+      font-size: 22px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }}
+    h3 {{
+      margin: 0 0 6px;
+      font-size: 16px;
       letter-spacing: 0;
     }}
     p {{ margin: 0; color: var(--muted); }}
-    .topline {{
-      display: flex;
-      gap: 12px;
+    .eyebrow {{
+      display: inline-flex;
+      gap: 8px;
       align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
+      margin-bottom: 16px;
+      color: var(--accent);
+      font: 700 13px/1.2 ui-sans-serif, system-ui, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }}
+    .rss-mark {{
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--accent);
+      border-left-color: transparent;
+      border-bottom-color: transparent;
+      border-radius: 50%;
+      position: relative;
+      display: inline-block;
+    }}
+    .rss-mark::after {{
+      content: "";
+      position: absolute;
+      left: -2px;
+      bottom: -2px;
+      width: 4px;
+      height: 4px;
+      background: var(--accent);
+      border-radius: 50%;
+    }}
+    .topline {{
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
+      gap: 28px;
+      align-items: center;
+      min-height: 420px;
+      padding-top: 18px;
+      padding-bottom: 22px;
+    }}
+    .hero-copy {{ max-width: 720px; }}
+    .hero-copy p {{
+      max-width: 680px;
+      margin-top: 18px;
+      color: #46545a;
+      font-size: 18px;
     }}
     .primary-actions {{
       display: flex;
-      gap: 8px;
+      gap: 10px;
       flex-wrap: wrap;
+      margin-top: 24px;
     }}
     .button, .icon-button {{
       appearance: none;
       border: 1px solid var(--line);
-      background: #ffffff;
+      background: var(--panel-strong);
       color: var(--ink);
       border-radius: 6px;
-      padding: 8px 10px;
+      padding: 9px 12px;
       text-decoration: none;
-      font: inherit;
+      font: 15px/1.2 ui-sans-serif, system-ui, sans-serif;
       cursor: pointer;
-      min-height: 36px;
+      min-height: 38px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -868,10 +940,50 @@ def build_index(stats, errors, item_count):
       border-color: var(--accent);
       background: var(--accent);
       color: var(--accent-ink);
+      box-shadow: 0 10px 22px rgba(8, 127, 115, .18);
+    }}
+    .button:hover, .icon-button:hover, .client-link:hover, .manage-link:hover {{
+      transform: translateY(-1px);
+      transition: transform .14s ease, border-color .14s ease;
+      border-color: rgba(8, 127, 115, .5);
+    }}
+    .subscribe-panel {{
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      border-radius: 8px;
+      padding: 18px;
+    }}
+    .subscribe-panel h2 {{
+      font-size: 18px;
+      margin-bottom: 8px;
+    }}
+    .feed-url {{
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+    }}
+    .feed-url code {{
+      flex: 1;
+      min-width: 0;
+      display: block;
+      border: 1px solid var(--line);
+      background: #f8f3e9;
+      border-radius: 6px;
+      padding: 10px 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    .mini-note {{
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      font-family: ui-sans-serif, system-ui, sans-serif;
     }}
     main.wrap {{
       display: grid;
-      gap: 18px;
+      gap: 22px;
     }}
     .stats {{
       display: grid;
@@ -879,53 +991,90 @@ def build_index(stats, errors, item_count):
       gap: 12px;
     }}
     .metric {{
-      background: var(--panel);
+      background: var(--panel-strong);
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 14px;
-      min-height: 84px;
+      padding: 16px;
+      min-height: 92px;
     }}
     .metric span {{
       display: block;
       color: var(--muted);
-      font-size: 13px;
+      font: 12px/1.2 ui-sans-serif, system-ui, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: .08em;
     }}
     .metric strong {{
       display: block;
-      font-size: 26px;
+      font-size: 30px;
       line-height: 1.2;
-      margin-top: 6px;
+      margin-top: 8px;
     }}
     section {{
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
+      padding: 22px;
+    }}
+    .section-head {{
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }}
+    .section-head p {{ max-width: 560px; }}
+    .steps, .clients {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .steps {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+    .step, .client-link, .source-note {{
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      border-radius: 8px;
       padding: 16px;
     }}
-    .feed-url {{
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
+    .step strong {{
+      width: 30px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: #fff;
+      font-family: ui-sans-serif, system-ui, sans-serif;
     }}
-    .feed-url code {{
-      flex: 1;
-      min-width: 0;
-      display: block;
-      border: 1px solid var(--line);
-      background: #f8fafc;
-      border-radius: 6px;
-      padding: 8px 10px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    .client-link {{
+      min-height: 138px;
+      color: var(--ink);
+      text-decoration: none;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+    }}
+    .client-link b {{
+      color: var(--accent);
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 13px;
+    }}
+    .client-link span {{ color: var(--muted); }}
+    .source-grid {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
     }}
     table {{
       width: 100%;
       border-collapse: collapse;
+      font-family: ui-sans-serif, system-ui, sans-serif;
     }}
     th, td {{
       border-bottom: 1px solid var(--line);
-      padding: 11px 8px;
+      padding: 12px 8px;
       text-align: left;
       vertical-align: middle;
     }}
@@ -934,10 +1083,31 @@ def build_index(stats, errors, item_count):
       font-weight: 600;
       font-size: 13px;
     }}
+    td strong {{ font-size: 14px; }}
     td span {{
       display: block;
       color: var(--muted);
       font-size: 13px;
+    }}
+    .number {{
+      color: var(--ink);
+      font-weight: 700;
+    }}
+    .quality {{
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .quality.good {{
+      background: var(--soft);
+      color: var(--accent);
+    }}
+    .quality.watch {{
+      background: #fff0d2;
+      color: #8c5b00;
     }}
     tr:last-child td {{ border-bottom: 0; }}
     .actions {{
@@ -956,10 +1126,11 @@ def build_index(stats, errors, item_count):
       padding: 12px;
       color: var(--ink);
       text-decoration: none;
-      background: #ffffff;
+      background: var(--panel-strong);
     }}
     .manage-link strong {{ display: block; }}
     .manage-link span {{ color: var(--muted); font-size: 13px; }}
+    .notice {{ border-color: #d6a53b; }}
     .toast {{
       position: fixed;
       right: 16px;
@@ -972,14 +1143,21 @@ def build_index(stats, errors, item_count):
       transform: translateY(8px);
       transition: opacity .16s ease, transform .16s ease;
       pointer-events: none;
+      font-family: ui-sans-serif, system-ui, sans-serif;
     }}
     .toast.show {{
       opacity: 1;
       transform: translateY(0);
     }}
+    @media (max-width: 900px) {{
+      .topline {{ grid-template-columns: 1fr; min-height: auto; }}
+      .stats, .clients, .source-grid {{ grid-template-columns: 1fr 1fr; }}
+    }}
     @media (max-width: 760px) {{
       .wrap {{ padding: 18px; }}
-      .stats, .manage-grid {{ grid-template-columns: 1fr 1fr; }}
+      .steps, .manage-grid {{ grid-template-columns: 1fr; }}
+      .section-head {{ display: block; }}
+      .section-head p {{ margin-top: 8px; }}
       table, thead, tbody, tr, th, td {{ display: block; }}
       thead {{ display: none; }}
       tr {{ border-bottom: 1px solid var(--line); padding: 10px 0; }}
@@ -988,83 +1166,182 @@ def build_index(stats, errors, item_count):
       .actions {{ padding-top: 8px; }}
     }}
     @media (max-width: 520px) {{
-      .stats, .manage-grid {{ grid-template-columns: 1fr; }}
+      .stats, .clients, .source-grid {{ grid-template-columns: 1fr; }}
       .feed-url {{ flex-direction: column; }}
+      h1 {{ font-size: 40px; }}
     }}
   </style>
 </head>
 <body>
-  <header>
+  <header class="hero">
     <div class="wrap topline">
-      <div>
-        <h1>Translation Studies RSS</h1>
-        <p>Enhanced journal feeds with cleaned metadata and optional Chinese abstracts.</p>
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="rss-mark" aria-hidden="true"></span> Translation Studies RSS</div>
+        <h1>翻译学期刊更新，一处订阅。</h1>
+        <p>这个页面把翻译学、口译研究、本地化、视听翻译等相关期刊的最新文章汇总成一个增强 RSS。订阅后，新文章会自动出现在你的阅读器里，尽量附带作者、摘要、DOI、页码和中文摘要。</p>
+        <div class="primary-actions">
+          <a class="button primary" href="feed.xml">打开总 RSS</a>
+          <button class="button" data-copy="feed.xml">复制订阅地址</button>
+          <a class="button" href="#journals">查看期刊</a>
+        </div>
       </div>
-      <div class="primary-actions">
-        <a class="button primary" href="feed.xml">Combined RSS</a>
-        <button class="button" data-copy="feed.xml">Copy URL</button>
+      <div class="subscribe-panel" id="subscribe">
+        <h2>总订阅地址</h2>
+        <p>把这个链接添加到任意 RSS 阅读器即可。已有订阅不用改地址，新增期刊会自动进入总 feed。</p>
+        <div class="feed-url">
+          <code id="combined-url">https://xionglingsong.github.io/rss-translation-studies/feed.xml</code>
+          <button class="button primary" data-copy="feed.xml">复制</button>
+        </div>
+        <div class="mini-note">最近生成：{generated_at}。GitHub Actions 每 6 小时自动刷新。</div>
       </div>
     </div>
   </header>
   <main class="wrap">
     <div class="stats">
-      <div class="metric"><span>Journals</span><strong>{len(stats)}</strong></div>
-      <div class="metric"><span>Items</span><strong>{item_count}</strong></div>
-      <div class="metric"><span>Chinese Abstracts</span><strong>{sum(stat["translated"] for stat in stats)}</strong></div>
-      <div class="metric"><span>Needs Metadata</span><strong>{sum(stat["weak_abstracts"] for stat in stats)}</strong></div>
+      <div class="metric"><span>收录期刊</span><strong>{len(stats)}</strong></div>
+      <div class="metric"><span>最新条目</span><strong>{item_count}</strong></div>
+      <div class="metric"><span>中文摘要</span><strong>{translated_total}</strong></div>
+      <div class="metric"><span>待补摘要</span><strong>{weak_total}</strong></div>
     </div>
+
     <section>
-      <h2>Subscribe</h2>
-      <p>Last generated: {generated_at}</p>
-      <div class="feed-url">
-        <code id="combined-url">https://xionglingsong.github.io/rss-translation-studies/feed.xml</code>
-        <button class="button" data-copy="feed.xml">Copy</button>
+      <div class="section-head">
+        <h2>怎么订阅</h2>
+        <p>RSS 的好处是不用每天打开十几个期刊网站，也不用等社交媒体推送。阅读器会替你定时检查更新。</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <strong>1</strong>
+          <h3>复制总订阅地址</h3>
+          <p>点击页面上的“复制订阅地址”，或直接复制 <code>feed.xml</code> 的完整链接。</p>
+        </div>
+        <div class="step">
+          <strong>2</strong>
+          <h3>打开 RSS 阅读器</h3>
+          <p>在阅读器里选择 Add Feed、New Subscription 或 Subscribe。</p>
+        </div>
+        <div class="step">
+          <strong>3</strong>
+          <h3>粘贴并确认</h3>
+          <p>保存后就能在同一个列表里看到各期刊的新文章。想只看某本期刊，也可以订阅下方单刊 RSS。</p>
+        </div>
       </div>
     </section>
+
     <section>
-      <h2>Journal Feeds</h2>
+      <div class="section-head">
+        <h2>推荐客户端</h2>
+        <p>下面按使用场景推荐。它们都支持添加 RSS 链接；选一个你会长期打开的就好。</p>
+      </div>
+      <div class="clients">
+        <a class="client-link" href="https://netnewswire.com/">
+          <b>Mac / iPhone / iPad</b>
+          <h3>NetNewsWire</h3>
+          <span>免费、开源、轻量，苹果设备上最省心的选择。</span>
+        </a>
+        <a class="client-link" href="https://feedly.com/news-reader">
+          <b>Web / iOS / Android</b>
+          <h3>Feedly</h3>
+          <span>跨平台同步方便，适合已经有较多信息源的用户。</span>
+        </a>
+        <a class="client-link" href="https://www.inoreader.com/">
+          <b>Web / iOS / Android</b>
+          <h3>Inoreader</h3>
+          <span>过滤、规则和整理能力强，适合精细管理订阅。</span>
+        </a>
+        <a class="client-link" href="https://readwise.io/read">
+          <b>深度阅读</b>
+          <h3>Readwise Reader</h3>
+          <span>把 RSS、稍后读、PDF、批注放在一起，适合做文献跟踪。</span>
+        </a>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>这个 RSS 做了什么</h2>
+        <p>有些期刊官方 RSS 信息很少，所以这里会在公开数据范围内做增强。</p>
+      </div>
+      <div class="source-grid">
+        <div class="source-note">
+          <h3>合并和清洗</h3>
+          <p>统一多个出版社和开放期刊系统的 RSS，按发布日期排序，保留每篇文章的原文链接。</p>
+        </div>
+        <div class="source-note">
+          <h3>补全元数据</h3>
+          <p>当官方 RSS 缺少摘要、DOI、页码时，会尝试从 DOI 数据库或文章页公开 meta 信息中补全。</p>
+        </div>
+        <div class="source-note">
+          <h3>中文摘要</h3>
+          <p>部署环境配置翻译 API 后，会为可用英文摘要生成中文摘要，便于快速扫读。</p>
+        </div>
+        <div class="source-note">
+          <h3>透明状态</h3>
+          <p>期刊表里显示每个源的条目数和摘要完整度。Editorial、书评等可能本来就没有摘要。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="journals">
+      <div class="section-head">
+        <h2>期刊列表</h2>
+        <p>可订阅总 RSS，也可只订阅单本期刊。单刊按钮会复制对应 XML 地址。</p>
+      </div>
       <table>
         <thead>
           <tr>
-            <th>Journal</th>
-            <th>Items</th>
-            <th>ZH</th>
-            <th>Weak</th>
-            <th>Actions</th>
+            <th>期刊</th>
+            <th>条目</th>
+            <th>中文</th>
+            <th>摘要状态</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          {journal_rows}
+          {"".join(journal_rows)}
         </tbody>
       </table>
     </section>
+
     <section>
-      <h2>Manage</h2>
+      <div class="section-head">
+        <h2>维护入口</h2>
+        <p>这个项目托管在 GitHub Pages，上游源变化时可以在仓库里调整配置并手动刷新。</p>
+      </div>
       <div class="manage-grid">
         <a class="manage-link" href="https://github.com/xionglingsong/rss-translation-studies/edit/main/journals.json">
-          <strong>Edit journals</strong>
-          <span>Update sources in journals.json</span>
+          <strong>编辑期刊源</strong>
+          <span>更新 journals.json</span>
         </a>
         <a class="manage-link" href="https://github.com/xionglingsong/rss-translation-studies/actions/workflows/publish-feed.yml">
-          <strong>Refresh feeds</strong>
-          <span>Run the publish workflow</span>
+          <strong>刷新 feed</strong>
+          <span>运行发布 workflow</span>
         </a>
         <a class="manage-link" href="https://github.com/xionglingsong/rss-translation-studies/settings/secrets/actions">
-          <strong>Translation key</strong>
-          <span>Set DEEPSEEK_API_KEY</span>
+          <strong>翻译密钥</strong>
+          <span>设置 DEEPSEEK_API_KEY</span>
         </a>
       </div>
     </section>
     {errors_html}
   </main>
-  <div class="toast" id="toast">Copied</div>
+  <div class="toast" id="toast" role="status" aria-live="polite">已复制订阅地址</div>
   <script>
     const baseUrl = "https://xionglingsong.github.io/rss-translation-studies/";
     const toast = document.getElementById("toast");
     document.querySelectorAll("[data-copy]").forEach((button) => {{
       button.addEventListener("click", async () => {{
         const value = new URL(button.dataset.copy, baseUrl).href;
-        await navigator.clipboard.writeText(value);
+        try {{
+          await navigator.clipboard.writeText(value);
+        }} catch (error) {{
+          const helper = document.createElement("textarea");
+          helper.value = value;
+          document.body.appendChild(helper);
+          helper.select();
+          document.execCommand("copy");
+          helper.remove();
+        }}
         toast.classList.add("show");
         setTimeout(() => toast.classList.remove("show"), 1400);
       }});
