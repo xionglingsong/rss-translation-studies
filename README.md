@@ -77,7 +77,9 @@ https://xionglingsong.github.io/rss-translation-studies/feed.xml
 - Babel
 - FORUM
 - Meta
+- Journal of Audiovisual Translation
+- The Journal of Specialised Translation
 
-Taylor & Francis feeds are enriched through DOI metadata because their RSS descriptions usually contain only issue information. John Benjamins feeds use Crossref on GitHub Actions because the publisher RSS endpoint may reject GitHub-hosted requests. Some reviews or editorial material may not have a public abstract in any metadata source.
+Taylor & Francis feeds are enriched through DOI metadata because their RSS descriptions usually contain only issue information. John Benjamins feeds use Crossref on GitHub Actions because the publisher RSS endpoint may reject GitHub-hosted requests. OJS feeds can be enriched from article page metadata when their RSS entries omit fields such as abstracts, DOIs, or pages. Some reviews or editorial material may not have a public abstract in any metadata source.
 
 To publish Chinese translations on GitHub Pages, add a `DEEPSEEK_API_KEY` repository secret. The workflow already enables `TRANSLATE_TO_ZH`.

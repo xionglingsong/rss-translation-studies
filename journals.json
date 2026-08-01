@@ -107,5 +107,24 @@
     "source_feed": "https://www.erudit.org/en/journals/meta/rss.xml",
     "split_description_author": true,
     "description": "Meta: Translators' Journal."
+  },
+  {
+    "slug": "journal-audiovisual-translation",
+    "title": "Journal of Audiovisual Translation",
+    "publisher": "European Association for Studies in Screen Translation",
+    "homepage": "https://jatjournal.org/index.php/jat/index",
+    "source_feed": "https://jatjournal.org/index.php/jat/gateway/plugin/WebFeedGatewayPlugin/rss2",
+    "enrich_from_article_page": true,
+    "description": "Journal of Audiovisual Translation."
+  },
+  {
+    "slug": "jostrans",
+    "title": "The Journal of Specialised Translation",
+    "publisher": "JoSTrans",
+    "homepage": "https://www.jostrans.org/",
+    "source_feed": "https://www.jostrans.org/gateway/plugin/WebFeedGatewayPlugin/rss2",
+    "enrich_from_article_page": true,
+    "max_items": 16,
+    "description": "JoSTrans: The Journal of Specialised Translation."
   }
 ]

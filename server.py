@@ -15,6 +15,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import format_datetime, parsedate_to_datetime
+from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -94,6 +95,21 @@ def save_json(path, data):
 
 def load_journals():
     return load_json(CONFIG_PATH, [])
+
+
+class MetaTagParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.meta = {}
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "meta":
+            return
+        values = {name.lower(): value for name, value in attrs if name and value is not None}
+        name = (values.get("name") or values.get("property") or "").lower()
+        content = (values.get("content") or "").strip()
+        if name and content:
+            self.meta.setdefault(name, []).append(html.unescape(content))
 
 
 def local_name(tag):
@@ -281,10 +297,57 @@ def metadata_from_openalex(doi):
     }
 
 
+def first_meta(meta, *names):
+    for name in names:
+        values = meta.get(name.lower()) or []
+        for value in values:
+            if value:
+                return value.strip()
+    return ""
+
+
+def article_page_metadata(url, cache):
+    page_cache = cache.setdefault("_article_pages", {})
+    cached = page_cache.get(url)
+    if cached and time.time() - cached.get("fetched_at", 0) < METADATA_TTL_SECONDS:
+        return cached.get("metadata") or {}
+    try:
+        page_html = fetch_text(url, accept="text/html,application/xhtml+xml", timeout=8, attempts=2)
+    except (urllib.error.URLError, TimeoutError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return {}
+
+    parser = MetaTagParser()
+    parser.feed(page_html)
+    meta = parser.meta
+    first_page = first_meta(meta, "citation_firstpage")
+    last_page = first_meta(meta, "citation_lastpage")
+    pages = first_meta(meta, "dc.identifier.pagenumber")
+    if first_page and last_page and first_page != last_page:
+        pages = f"{first_page}-{last_page}"
+    elif first_page:
+        pages = first_page
+
+    metadata = {
+        "title": first_meta(meta, "citation_title", "dc.title"),
+        "creator": ", ".join(meta.get("citation_author") or meta.get("dc.creator.personalname") or []),
+        "date": first_meta(meta, "dc.date.issued", "citation_date").replace("/", "-"),
+        "journal": first_meta(meta, "citation_journal_title", "dc.source"),
+        "issue": first_meta(meta, "citation_issue", "dc.source.issue"),
+        "pages": pages,
+        "doi": first_meta(meta, "citation_doi", "dc.identifier.doi"),
+        "abstract": strip_html(first_meta(meta, "dc.description", "citation_abstract")),
+    }
+    metadata = {key: value for key, value in metadata.items() if value}
+    page_cache[url] = {"metadata": metadata, "fetched_at": time.time()}
+    return metadata
+
+
 def merge_missing(item, metadata):
     for key in ("title", "date", "journal", "volume", "issue", "pages"):
         if not item.get(key) and metadata.get(key):
             item[key] = metadata[key]
+    if not item.get("doi") and metadata.get("doi"):
+        item["doi"] = metadata["doi"]
     if metadata.get("creator") and should_replace_creator(item.get("creator", "")):
         item["creator"] = metadata["creator"]
     if metadata.get("abstract"):
@@ -618,6 +681,13 @@ def build_rss(title, link, description, items):
 def generate_source(source, cache):
     feed = parse_source_feed(source)
     items_to_enrich = feed["items"][: source.get("max_items", MAX_ITEMS_PER_SOURCE)]
+    if source.get("enrich_from_article_page"):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            page_metadata = list(
+                executor.map(lambda item: article_page_metadata(item.get("link", ""), cache), items_to_enrich)
+            )
+        for item, metadata in zip(items_to_enrich, page_metadata):
+            merge_missing(item, metadata)
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         items = list(executor.map(lambda item: enrich_item(item, cache), items_to_enrich))
     if TRANSLATE_TO_ZH and DEEPSEEK_API_KEY:
@@ -693,7 +763,7 @@ def generate_all_feeds():
 
 def weak_abstract(item):
     abstract = item.get("abstract") or item.get("fallback_description") or ""
-    return "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract))
+    return not abstract or "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract))
 
 
 def build_index(stats, errors, item_count):
