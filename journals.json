@@ -40,6 +40,14 @@
     "description": "Asia Pacific Translation and Intercultural Studies."
   },
   {
+    "slug": "translation-review",
+    "title": "Translation Review",
+    "publisher": "Taylor & Francis",
+    "homepage": "https://www.tandfonline.com/journals/utrv20",
+    "source_feed": "https://www.tandfonline.com/feed/rss/utrv20",
+    "description": "Translation Review."
+  },
+  {
     "slug": "target",
     "title": "Target",
     "publisher": "John Benjamins",
@@ -100,6 +108,36 @@
     "description": "FORUM: International Journal of Interpretation and Translation."
   },
   {
+    "slug": "translation-in-society",
+    "title": "Translation in Society",
+    "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "2667-3045",
+    "homepage": "https://www.jbe-platform.com/content/journals/26673045",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/26673045/latestarticles",
+    "description": "Translation in Society."
+  },
+  {
+    "slug": "translation-cognition-behavior",
+    "title": "Translation, Cognition & Behavior",
+    "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "2542-5285",
+    "homepage": "https://www.jbe-platform.com/content/journals/25425285",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/25425285/latestarticles",
+    "description": "Translation, Cognition & Behavior."
+  },
+  {
+    "slug": "translation-translanguaging-multilingual-contexts",
+    "title": "Translation and Translanguaging in Multilingual Contexts",
+    "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "2352-1813",
+    "homepage": "https://www.jbe-platform.com/content/journals/23521813",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/23521813/latestarticles",
+    "description": "Translation and Translanguaging in Multilingual Contexts."
+  },
+  {
     "slug": "meta",
     "title": "Meta",
     "publisher": "Érudit",
@@ -126,5 +164,13 @@
     "enrich_from_article_page": true,
     "max_items": 16,
     "description": "JoSTrans: The Journal of Specialised Translation."
+  },
+  {
+    "slug": "interpreting-and-society",
+    "title": "Interpreting and Society",
+    "publisher": "SAGE",
+    "homepage": "https://journals.sagepub.com/home/isy",
+    "source_feed": "https://journals.sagepub.com/action/showFeed?type=etoc&feed=rss&jc=isy",
+    "description": "Interpreting and Society: An Interdisciplinary Journal."
   }
 ]
