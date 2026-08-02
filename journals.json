@@ -138,6 +138,36 @@
     "description": "Translation and Translanguaging in Multilingual Contexts."
   },
   {
+    "slug": "digital-translation",
+    "title": "Digital Translation",
+    "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "2949-6845",
+    "homepage": "https://www.jbe-platform.com/content/journals/29496845",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/29496845/latestarticles",
+    "description": "Digital Translation."
+  },
+  {
+    "slug": "incontext",
+    "title": "InContext",
+    "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "2799-8592",
+    "homepage": "https://www.jbe-platform.com/content/journals/27998592",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/27998592/latestarticles",
+    "description": "InContext."
+  },
+  {
+    "slug": "terminology",
+    "title": "Terminology",
+    "publisher": "John Benjamins",
+    "source_type": "crossref",
+    "issn": "1569-9994",
+    "homepage": "https://www.jbe-platform.com/content/journals/15699994",
+    "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/15699994/latestarticles",
+    "description": "Terminology: International Journal of Theoretical and Applied Issues in Specialized Communication."
+  },
+  {
     "slug": "meta",
     "title": "Meta",
     "publisher": "Érudit",

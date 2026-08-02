@@ -80,6 +80,9 @@ https://xionglingsong.github.io/rss-translation-studies/feed.xml
 - Translation in Society
 - Translation, Cognition & Behavior
 - Translation and Translanguaging in Multilingual Contexts
+- Digital Translation
+- InContext
+- Terminology
 - Meta
 - Journal of Audiovisual Translation
 - The Journal of Specialised Translation
