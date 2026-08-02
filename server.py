@@ -151,6 +151,14 @@ def strip_html(value):
     return value.strip()
 
 
+def is_truncated_abstract(value):
+    return bool(re.search(r"(\.\.\.|…)\s*$", value or ""))
+
+
+def usable_abstract(value):
+    return bool(value) and not is_truncated_abstract(value)
+
+
 def extract_doi(*values):
     for value in values:
         match = re.search(r"10\.\d{4,9}/[^\s\"'<>]+", value or "", flags=re.I)
@@ -350,7 +358,7 @@ def merge_missing(item, metadata):
         item["doi"] = metadata["doi"]
     if metadata.get("creator") and should_replace_creator(item.get("creator", "")):
         item["creator"] = metadata["creator"]
-    if metadata.get("abstract"):
+    if usable_abstract(metadata.get("abstract", "")):
         item["abstract"] = metadata["abstract"]
 
 
@@ -587,6 +595,8 @@ def parse_crossref_source(source):
         doi = work.get("DOI") or ""
         title = strip_html((work.get("title") or [""])[0])
         abstract = strip_html(work.get("abstract") or "")
+        if is_truncated_abstract(abstract):
+            abstract = ""
         link = work.get("URL") or (f"https://doi.org/{doi}" if doi else source["homepage"])
         items.append(
             {
@@ -763,7 +773,7 @@ def generate_all_feeds():
 
 def weak_abstract(item):
     abstract = item.get("abstract") or item.get("fallback_description") or ""
-    return not abstract or "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract))
+    return not abstract or "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract)) or is_truncated_abstract(abstract)
 
 
 def build_public_index(stats, errors, item_count):
