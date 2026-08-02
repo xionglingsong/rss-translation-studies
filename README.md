@@ -88,6 +88,6 @@ https://xionglingsong.github.io/rss-translation-studies/feed.xml
 - The Journal of Specialised Translation
 - Interpreting and Society
 
-Taylor & Francis and SAGE feeds are enriched through DOI metadata because their RSS descriptions often contain only issue information or shortened abstracts. John Benjamins feeds use Crossref on GitHub Actions because the publisher RSS endpoint may reject GitHub-hosted requests. OJS feeds can be enriched from article page metadata when their RSS entries omit fields such as abstracts, DOIs, or pages. Some reviews or editorial material may not have a public abstract in any metadata source.
+Taylor & Francis, John Benjamins, and JAT entries use Crossref on GitHub Pages because some publisher RSS endpoints may reject GitHub-hosted requests. SAGE and OJS feeds are enriched through DOI or article-page metadata when their RSS entries omit fields such as abstracts, DOIs, or pages. Some reviews or editorial material may not have a public abstract in any metadata source.
 
 To publish Chinese translations on GitHub Pages, add a `DEEPSEEK_API_KEY` repository secret. The workflow already enables `TRANSLATE_TO_ZH`.
