@@ -784,10 +784,12 @@ def build_public_index(stats, errors, item_count):
               <td><span class="number">{stat["items"]}</span></td>
               <td><span class="number">{stat["translated"]}</span></td>
               <td><span class="quality {quality_class}">{quality_label}</span></td>
-              <td class="actions">
-                <a class="icon-button" title="打开单刊 RSS" href="{html.escape(stat["feed"])}" aria-label="打开单刊 RSS">RSS</a>
-                <button class="icon-button" title="复制单刊订阅地址" data-copy="{html.escape(stat["feed"])}" aria-label="复制单刊订阅地址">Copy</button>
-                <a class="icon-button" title="打开期刊网站" href="{html.escape(stat["homepage"])}" aria-label="打开期刊网站">Site</a>
+              <td class="actions-cell">
+                <div class="actions">
+                  <a class="icon-button" title="打开单刊 RSS" href="{html.escape(stat["feed"])}" aria-label="打开单刊 RSS">RSS</a>
+                  <button class="icon-button" title="复制单刊订阅地址" data-copy="{html.escape(stat["feed"])}" aria-label="复制单刊订阅地址">Copy</button>
+                  <a class="icon-button" title="打开期刊网站" href="{html.escape(stat["homepage"])}" aria-label="打开期刊网站">Site</a>
+                </div>
               </td>
             </tr>
             """
@@ -1070,8 +1072,17 @@ def build_public_index(stats, errors, item_count):
     table {{
       width: 100%;
       border-collapse: collapse;
+      table-layout: fixed;
       font-family: ui-sans-serif, system-ui, sans-serif;
     }}
+    th:nth-child(1), td:nth-child(1) {{ width: 53%; }}
+    th:nth-child(2), td:nth-child(2),
+    th:nth-child(3), td:nth-child(3) {{
+      width: 7%;
+      text-align: center;
+    }}
+    th:nth-child(4), td:nth-child(4) {{ width: 12%; }}
+    th:nth-child(5), td:nth-child(5) {{ width: 21%; }}
     th, td {{
       border-bottom: 1px solid var(--line);
       padding: 12px 8px;
@@ -1110,10 +1121,19 @@ def build_public_index(stats, errors, item_count):
       color: #8c5b00;
     }}
     tr:last-child td {{ border-bottom: 0; }}
+    .actions-cell {{
+      min-width: 248px;
+    }}
     .actions {{
       display: flex;
       gap: 6px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+      align-items: center;
+      justify-content: flex-start;
+      min-width: max-content;
+    }}
+    .actions .icon-button {{
+      min-width: 62px;
     }}
     .manage-grid {{
       display: grid;
@@ -1163,7 +1183,12 @@ def build_public_index(stats, errors, item_count):
       tr {{ border-bottom: 1px solid var(--line); padding: 10px 0; }}
       tr:last-child {{ border-bottom: 0; }}
       td {{ border-bottom: 0; padding: 4px 0; }}
-      .actions {{ padding-top: 8px; }}
+      .actions-cell {{ min-width: 0; }}
+      .actions {{
+        padding-top: 8px;
+        flex-wrap: wrap;
+        min-width: 0;
+      }}
     }}
     @media (max-width: 520px) {{
       .stats, .clients, .source-grid {{ grid-template-columns: 1fr; }}
