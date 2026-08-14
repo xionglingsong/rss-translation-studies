@@ -88,6 +88,213 @@ TOPICS = [
 ]
 TOPIC_BY_SLUG = {topic["slug"]: topic for topic in TOPICS}
 
+ARTICLE_TYPES = [
+    {
+        "slug": "article",
+        "label": "Article",
+        "description": "研究论文、案例研究和理论论文。",
+    },
+    {
+        "slug": "review",
+        "label": "Review",
+        "description": "综述、评论文章、论坛短论和回顾性文章。",
+    },
+    {
+        "slug": "book-review",
+        "label": "Book Review",
+        "description": "书评、新书评论和相关评介。",
+    },
+]
+ARTICLE_TYPE_BY_SLUG = {item_type["slug"]: item_type for item_type in ARTICLE_TYPES}
+
+TOPIC_KEYWORDS = {
+    "interpreting": (
+        "interpreting",
+        "interpreter",
+        "conference interpreting",
+        "simultaneous",
+        "consecutive",
+        "dialogue interpreting",
+        "community interpreting",
+        "public service interpreting",
+        "court interpreting",
+        "healthcare interpreting",
+        "medical interpreting",
+        "signed language",
+        "sign language",
+        "口译",
+        "传译",
+        "同声传译",
+        "交替传译",
+    ),
+    "translator-education": (
+        "training",
+        "trainer",
+        "education",
+        "teaching",
+        "learning",
+        "pedagogy",
+        "curriculum",
+        "classroom",
+        "student",
+        "trainee",
+        "assessment",
+        "competence",
+        "didactic",
+        "译者教育",
+        "翻译教学",
+        "口译教学",
+        "课程",
+        "能力",
+    ),
+    "society-culture": (
+        "culture",
+        "cultural",
+        "sociology",
+        "social",
+        "society",
+        "ideology",
+        "gender",
+        "race",
+        "migration",
+        "activism",
+        "colonial",
+        "postcolonial",
+        "minority",
+        "multilingual",
+        "translanguaging",
+        "intercultural",
+        "diplomacy",
+        "policy",
+        "文化",
+        "社会",
+        "意识形态",
+        "跨文化",
+        "多语",
+    ),
+    "cognition-process": (
+        "cognition",
+        "cognitive",
+        "process",
+        "eye-tracking",
+        "eye tracking",
+        "keystroke",
+        "think-aloud",
+        "think aloud",
+        "experiment",
+        "experimental",
+        "effort",
+        "working memory",
+        "attention",
+        "decision-making",
+        "reception",
+        "认知",
+        "眼动",
+        "实验",
+        "过程",
+    ),
+    "digital-ai-translation": (
+        "machine translation",
+        "neural machine translation",
+        "automatic translation",
+        "artificial intelligence",
+        "generative ai",
+        "large language model",
+        "chatgpt",
+        "post-editing",
+        "postediting",
+        "localization",
+        "localisation",
+        "corpus",
+        "digital",
+        "technology",
+        "automatic dubbing",
+        "机器翻译",
+        "人工智能",
+        "大语言模型",
+        "本地化",
+        "译后编辑",
+        "语料库",
+    ),
+    "audiovisual-translation": (
+        "audiovisual",
+        "subtitling",
+        "subtitle",
+        "caption",
+        "dubbing",
+        "voice-over",
+        "audio description",
+        "media accessibility",
+        "fansubbing",
+        "screen translation",
+        "multimodal",
+        "视听翻译",
+        "字幕",
+        "配音",
+        "无障碍",
+        "多模态",
+    ),
+    "terminology-specialized-translation": (
+        "terminology",
+        "term",
+        "specialised",
+        "specialized",
+        "legal translation",
+        "medical translation",
+        "technical translation",
+        "scientific translation",
+        "institutional translation",
+        "domain-specific",
+        "lsp",
+        "专门用途",
+        "术语",
+        "法律翻译",
+        "医学翻译",
+        "科技翻译",
+        "机构翻译",
+    ),
+    "general-translation-studies": (
+        "translation",
+        "translator",
+        "translating",
+        "translation studies",
+        "theory",
+        "history",
+        "literary translation",
+        "translation theory",
+        "翻译",
+        "译者",
+        "翻译学",
+        "翻译理论",
+        "翻译史",
+    ),
+}
+
+TYPE_KEYWORDS = {
+    "book-review": (
+        "book review",
+        "book reviews",
+        "review of ",
+        "reviews of ",
+        "books received",
+        "new books",
+        "书评",
+    ),
+    "review": (
+        "review article",
+        "literature review",
+        "systematic review",
+        "scoping review",
+        "state of the art",
+        "state-of-the-art",
+        "review essay",
+        "survey of ",
+        "a review of ",
+        "综述",
+        "述评",
+    ),
+}
+
 NS = {
     "atom": "http://www.w3.org/2005/Atom",
     "content": "http://purl.org/rss/1.0/modules/content/",
@@ -260,8 +467,75 @@ def topic_feed_name(slug):
     return f"topic-{slug}.xml"
 
 
+def type_feed_name(slug):
+    return f"type-{slug}.xml"
+
+
 def topic_labels(tags):
     return [TOPIC_BY_SLUG[tag]["label"] for tag in tags if tag in TOPIC_BY_SLUG]
+
+
+def article_type_label(slug):
+    return ARTICLE_TYPE_BY_SLUG.get(slug, ARTICLE_TYPE_BY_SLUG["article"])["label"]
+
+
+def normalized_item_text(item):
+    values = [
+        item.get("title", ""),
+        item.get("abstract", ""),
+        "" if weak_abstract(item) else item.get("fallback_description", ""),
+    ]
+    return " ".join(values).lower()
+
+
+def score_topic(text, keywords):
+    score = 0
+    for keyword in keywords:
+        keyword_lower = keyword.lower()
+        if " " in keyword_lower or "-" in keyword_lower:
+            if keyword_lower in text:
+                score += 3
+        else:
+            score += len(re.findall(rf"(?<![a-z0-9]){re.escape(keyword_lower)}(?![a-z0-9])", text))
+    return score
+
+
+def classify_item_topics(item, fallback_tags):
+    text = normalized_item_text(item)
+    scored = []
+    for slug, keywords in TOPIC_KEYWORDS.items():
+        score = score_topic(text, keywords)
+        if score > 0:
+            scored.append((score, slug))
+    if not scored:
+        return list(fallback_tags or ["general-translation-studies"])
+    scored.sort(key=lambda pair: (-pair[0], TOPICS.index(TOPIC_BY_SLUG[pair[1]])))
+    topics = [slug for _, slug in scored[:3]]
+    if "general-translation-studies" in topics and len(topics) > 1:
+        topics = [slug for slug in topics if slug != "general-translation-studies"]
+    return topics or ["general-translation-studies"]
+
+
+def classify_item_type(item):
+    title = (item.get("title") or "").lower()
+    for keyword in TYPE_KEYWORDS["book-review"]:
+        if keyword in title:
+            return "book-review"
+    for keyword in TYPE_KEYWORDS["review"]:
+        if keyword in title:
+            return "review"
+    return "article"
+
+
+def classify_item(item, fallback_tags):
+    topics = classify_item_topics(item, fallback_tags)
+    item["article_topics"] = topics
+    item["source_tags"] = topics
+    item["topic_labels"] = topic_labels(topics)
+    item["journal_tags"] = list(fallback_tags or [])
+    item["item_type"] = classify_item_type(item)
+    item["item_type_label"] = article_type_label(item["item_type"])
+    return item
 
 
 def extract_doi(*values):
@@ -900,6 +1174,10 @@ def item_body(item):
         issue_bits.append(f"Pages {html.escape(item['pages'])}")
     if issue_bits:
         meta.append(f"<p><strong>Issue:</strong> {', '.join(issue_bits)}</p>")
+    if item.get("topic_labels"):
+        meta.append(f"<p><strong>Topics:</strong> {html.escape(', '.join(item['topic_labels']))}</p>")
+    if item.get("item_type_label"):
+        meta.append(f"<p><strong>Type:</strong> {html.escape(item['item_type_label'])}</p>")
     if item.get("doi"):
         meta.append(f"<p><strong>DOI:</strong> {html.escape(item['doi'])}</p>")
 
@@ -929,6 +1207,11 @@ def build_rss(title, link, description, items):
         title_text = item.get("title") or "Untitled"
         if item.get("source_title") and not title_text.startswith(item["source_title"]):
             title_text = f"[{item['source_title']}] {title_text}"
+        categories = []
+        if item.get("item_type_label"):
+            categories.append(item["item_type_label"])
+        categories.extend(item.get("topic_labels") or [])
+        category_lines = [f"<category>{html.escape(category)}</category>" for category in categories]
         lines.extend(
             [
                 "<item>",
@@ -936,6 +1219,7 @@ def build_rss(title, link, description, items):
                 f"<link>{html.escape(item.get('link') or '')}</link>",
                 f"<guid isPermaLink=\"false\">{html.escape(guid)}</guid>",
                 f"<pubDate>{pub_date}</pubDate>",
+                *category_lines,
                 f"<description>{cdata(body)}</description>",
                 f"<content:encoded>{cdata(body)}</content:encoded>",
                 f"<dc:creator>{html.escape(item['creator'])}</dc:creator>" if item.get("creator") else "",
@@ -1029,6 +1313,10 @@ def build_weekly_markdown(combined_items, topic_stats, generated_at):
             )
             if item.get("creator"):
                 lines.append(f"- 作者：{markdown_escape(item['creator'])}")
+            if item.get("item_type_label"):
+                lines.append(f"- 类型：{markdown_escape(item['item_type_label'])}")
+            if item.get("topic_labels"):
+                lines.append(f"- 研究方向：{markdown_escape('、'.join(item['topic_labels']))}")
             if item.get("doi"):
                 lines.append(f"- DOI：{markdown_escape(item['doi'])}")
             if item.get("link"):
@@ -1049,6 +1337,8 @@ def build_weekly_markdown(combined_items, topic_stats, generated_at):
                     "",
                     f"- 期刊：{markdown_escape(item.get('source_title') or item.get('journal'))}",
                     f"- 日期：{item_date_label(item)}",
+                    f"- 类型：{markdown_escape(item.get('item_type_label') or article_type_label(item.get('item_type')))}",
+                    f"- 研究方向：{markdown_escape('、'.join(item.get('topic_labels') or topic_labels(item.get('source_tags', []))))}",
                     "",
                     markdown_summary(item),
                     "",
@@ -1076,6 +1366,11 @@ def build_weekly_html(combined_items, topic_stats, generated_at, markdown_path):
             creator = html.escape(markdown_escape(item.get("creator") or ""))
             creator_html = f"<p class=\"byline\">{creator}</p>" if creator else ""
             doi_html = f"<span>DOI: {html.escape(item['doi'])}</span>" if item.get("doi") else ""
+            type_html = f"<span>{html.escape(item.get('item_type_label') or article_type_label(item.get('item_type')))}</span>"
+            topics_html = "".join(
+                f"<span>{html.escape(label)}</span>"
+                for label in item.get("topic_labels", [])
+            )
             summary = html.escape(markdown_summary(item))
             cards.append(
                 f"""
@@ -1083,6 +1378,8 @@ def build_weekly_html(combined_items, topic_stats, generated_at, markdown_path):
                   <div class="meta">
                     <span>{html.escape(item_date_label(item))}</span>
                     <span>{journal}</span>
+                    {type_html}
+                    {topics_html}
                     {doi_html}
                   </div>
                   <h3><a href="{link}">{title}</a></h3>
@@ -1274,9 +1571,14 @@ def generate_all_feeds():
             feed, items = generate_source(source, cache)
             tags = source.get("tags", [])
             for item in items:
-                item["source_tags"] = tags
+                classify_item(item, tags)
             combined_items.extend(items)
             weak_abstracts = sum(1 for item in items if weak_abstract(item))
+            article_topic_slugs = []
+            for item in items:
+                for tag in item.get("source_tags", []):
+                    if tag not in article_topic_slugs:
+                        article_topic_slugs.append(tag)
             source_type = source.get("source_type", "rss")
             stats.append(
                 {
@@ -1290,6 +1592,8 @@ def generate_all_feeds():
                     "source_label": source_type_label(source_type),
                     "tags": tags,
                     "tag_labels": topic_labels(tags),
+                    "article_tags": article_topic_slugs,
+                    "article_tag_labels": topic_labels(article_topic_slugs),
                     "status": "ok",
                     "status_label": "本次成功",
                     "last_success_at": generated_at_iso,
@@ -1317,10 +1621,10 @@ def generate_all_feeds():
     topic_stats = []
     for topic in TOPICS:
         topic_items = [item for item in combined_items if topic["slug"] in item.get("source_tags", [])]
-        journal_count = sum(1 for stat in stats if topic["slug"] in stat.get("tags", []))
+        journal_count = len({item.get("source_slug") for item in topic_items})
         feed_name = topic_feed_name(topic["slug"])
         outputs[feed_name] = build_rss(
-            f"{topic['label']} - Translation Studies Journals",
+            f"{topic['label']} - Translation Studies Articles",
             f"https://xionglingsong.github.io/rss-translation-studies/{feed_name}",
             topic["description"],
             topic_items,
@@ -1333,6 +1637,26 @@ def generate_all_feeds():
                 "feed": feed_name,
                 "journal_count": journal_count,
                 "item_count": len(topic_items),
+            }
+        )
+    type_stats = []
+    for item_type in ARTICLE_TYPES:
+        type_items = [item for item in combined_items if item.get("item_type") == item_type["slug"]]
+        feed_name = type_feed_name(item_type["slug"])
+        outputs[feed_name] = build_rss(
+            f"{item_type['label']} - Translation Studies Articles",
+            f"https://xionglingsong.github.io/rss-translation-studies/{feed_name}",
+            item_type["description"],
+            type_items,
+        )
+        type_stats.append(
+            {
+                "slug": item_type["slug"],
+                "label": item_type["label"],
+                "description": item_type["description"],
+                "feed": feed_name,
+                "journal_count": len({item.get("source_slug") for item in type_items}),
+                "item_count": len(type_items),
             }
         )
     weekly_markdown = build_weekly_markdown(combined_items, topic_stats, generated_at)
@@ -1361,6 +1685,7 @@ def generate_all_feeds():
             "translated_count": sum(stat["translated"] for stat in stats),
             "weak_abstract_count": sum(stat["weak_abstracts"] for stat in stats),
             "topics": topic_stats,
+            "types": type_stats,
             "journals": stats,
             "errors": errors,
         },
@@ -1370,6 +1695,7 @@ def generate_all_feeds():
     outputs["index.html"] = build_public_index(
         stats,
         topic_stats,
+        type_stats,
         errors,
         len(combined_items),
         generated_at,
@@ -1399,6 +1725,11 @@ def validate_static_outputs(outputs, sources):
         for topic in TOPICS
         if topic_feed_name(topic["slug"]) not in outputs
     ]
+    missing_type_feeds = [
+        item_type["slug"]
+        for item_type in ARTICLE_TYPES
+        if type_feed_name(item_type["slug"]) not in outputs
+    ]
     weekly_manifest = manifest.get("weekly", {})
     expected_weekly_files = [
         "weekly/latest.html",
@@ -1407,12 +1738,13 @@ def validate_static_outputs(outputs, sources):
         weekly_manifest.get("dated_markdown", ""),
     ]
     missing_weekly = [name for name in expected_weekly_files if name and name not in outputs]
-    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_weekly:
+    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_type_feeds or missing_weekly:
         details = [
             f"expected {expected_count} journals, generated {actual_count}",
             f"errors: {len(errors)}",
             f"missing feeds: {', '.join(missing_feeds) if missing_feeds else 'none'}",
             f"missing topic feeds: {', '.join(missing_topic_feeds) if missing_topic_feeds else 'none'}",
+            f"missing type feeds: {', '.join(missing_type_feeds) if missing_type_feeds else 'none'}",
             f"missing weekly files: {', '.join(missing_weekly) if missing_weekly else 'none'}",
         ]
         if errors:
@@ -1431,7 +1763,7 @@ def weak_abstract(item):
     )
 
 
-def build_public_index(stats, topic_stats, errors, item_count, generated_at, weekly_path, weekly_md_path, combined_items):
+def build_public_index(stats, topic_stats, type_stats, errors, item_count, generated_at, weekly_path, weekly_md_path, combined_items):
     generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
     weak_total = sum(stat["weak_abstracts"] for stat in stats)
     translated_total = sum(stat["translated"] for stat in stats)
@@ -1477,6 +1809,7 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
             summary = html.escape(truncate_text(markdown_summary(item), 180))
             link = html.escape(item.get("link") or "#")
             doi_html = f'<span>DOI: {html.escape(item["doi"])}</span>' if item.get("doi") else ""
+            type_html = f'<span>{html.escape(item.get("item_type_label") or article_type_label(item.get("item_type")))}</span>'
             creator_html = f"<span>{creator}</span>" if creator else ""
             cards.append(
                 f"""
@@ -1484,6 +1817,7 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
                   <div class="update-meta">
                     <span>{html.escape(item_date_label(item))}</span>
                     <span>{journal}</span>
+                    {type_html}
                     {doi_html}
                   </div>
                   <h4><a href="{link}">{title}</a></h4>
@@ -1521,12 +1855,32 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
             </article>
             """
         )
+    type_cards = []
+    for item_type in type_stats:
+        type_cards.append(
+            f"""
+            <article class="topic-card">
+              <div>
+                <h3>{html.escape(item_type["label"])}</h3>
+                <p>{html.escape(item_type["description"])}</p>
+              </div>
+              <div class="topic-meta">
+                <span>{item_type["journal_count"]} 本来源期刊</span>
+                <span>{item_type["item_count"]} 条</span>
+              </div>
+              <div class="topic-actions">
+                <a class="icon-button" href="{html.escape(item_type["feed"])}">RSS</a>
+                <button class="icon-button" data-copy="{html.escape(item_type["feed"])}">Copy</button>
+              </div>
+            </article>
+            """
+        )
     journal_rows = []
     for stat in stats:
         quality_class = "good" if stat["weak_abstracts"] == 0 else "watch"
         quality_label = "完整" if stat["weak_abstracts"] == 0 else f"{stat['weak_abstracts']} 条待补"
         status_title = f"最近成功：{generated_label}"
-        tags_html = "".join(f'<span class="tag-chip">{html.escape(label)}</span>' for label in stat.get("tag_labels", []))
+        tags_html = "".join(f'<span class="tag-chip">{html.escape(label)}</span>' for label in stat.get("article_tag_labels", []))
         journal_rows.append(
             f"""
             <tr>
@@ -2358,10 +2712,20 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
     <section id="topics">
       <div class="section-head">
         <h2>按研究方向订阅</h2>
-        <p>如果你不想订阅全部期刊，可以只订阅某个研究方向。分类 RSS 会自动汇总对应期刊的新文章。</p>
+        <p>如果你不想订阅全部期刊，可以只订阅某个研究方向。分类 RSS 会按每篇文章的标题和摘要自动归类。</p>
       </div>
       <div class="topic-grid">
         {"".join(topic_cards)}
+      </div>
+    </section>
+
+    <section id="types">
+      <div class="section-head">
+        <h2>按文章类型订阅</h2>
+        <p>也可以只看研究论文、综述或书评。类型 RSS 和研究方向 RSS 可以搭配使用。</p>
+      </div>
+      <div class="topic-grid">
+        {"".join(type_cards)}
       </div>
     </section>
 

@@ -21,7 +21,7 @@ http://127.0.0.1:8765/target.xml
 http://127.0.0.1:8765/translation-studies.xml
 ```
 
-Topic feeds are generated from the `tags` field in `journals.json`, for example:
+Topic feeds are generated from each article's title and abstract, with journal tags used only as a fallback, for example:
 
 ```text
 http://127.0.0.1:8765/topic-interpreting.xml
@@ -108,9 +108,9 @@ https://xionglingsong.github.io/rss-translation-studies/feed.xml
 - The Journal of Specialised Translation
 - Interpreting and Society
 
-## Topic Feeds
+## Classification Feeds
 
-The project also publishes topic-specific RSS feeds. These are generated from journal-level tags, so a journal can appear in more than one topic.
+The project also publishes classification RSS feeds. Topic feeds are generated at article level from titles and abstracts, so different articles from the same journal can appear in different topic feeds.
 
 - 综合翻译学: `topic-general-translation-studies.xml`
 - 口译研究: `topic-interpreting.xml`
@@ -120,6 +120,12 @@ The project also publishes topic-specific RSS feeds. These are generated from jo
 - 数字与 AI 翻译: `topic-digital-ai-translation.xml`
 - 视听翻译: `topic-audiovisual-translation.xml`
 - 术语与专门用途翻译: `topic-terminology-specialized-translation.xml`
+
+Type feeds are generated from article titles and public metadata:
+
+- Article: `type-article.xml`
+- Review: `type-review.xml`
+- Book Review: `type-book-review.xml`
 
 ## Weekly Digest
 
@@ -151,7 +157,7 @@ Use this checklist whenever adding or repairing a journal.
    - Open `public/manifest.json` and confirm `journal_count` equals the number of entries in `journals.json`.
    - Check `errors` is an empty list.
    - Review `weak_abstract_count` and the per-journal `weak_abstracts` values.
-   - Review the `topics` section and confirm each expected topic feed has items.
+   - Review the `topics` and `types` sections and confirm each expected classification feed is present.
    - Open `public/weekly/latest.html` and confirm the weekly digest renders cleanly.
    - Open `public/weekly/latest.md` and confirm the Markdown draft has sensible grouping and links.
 
