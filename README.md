@@ -45,9 +45,9 @@ python3 server.py --once public/feed.xml
 
 This writes `public/feed.xml`, `public/index.html`, and one XML file per journal.
 
-The static build also writes `public/weekly/latest.md` and a dated weekly Markdown digest under `public/weekly/`.
+The static build also writes a rendered weekly digest at `public/weekly/latest.html`, plus Markdown drafts at `public/weekly/latest.md` and `public/weekly/YYYY-MM-DD.md`.
 
-The static build checks that every journal in `journals.json` produced a feed. A failed source, missing per-journal XML file, missing topic feed, missing weekly digest, or journal-count mismatch will raise an error.
+The static build checks that every journal in `journals.json` produced a feed. A failed source, missing per-journal XML file, missing topic feed, missing weekly page, missing weekly Markdown draft, or journal-count mismatch will raise an error.
 
 To include Chinese translations locally:
 
@@ -123,10 +123,12 @@ The project also publishes topic-specific RSS feeds. These are generated from jo
 
 ## Weekly Digest
 
-The site publishes a Markdown digest that can be reused for newsletters, WeChat posts, group updates, or Obsidian drafts.
+The site publishes a rendered weekly digest for readers and Markdown drafts for newsletters, WeChat posts, group updates, or Obsidian.
 
-- Latest digest: `weekly/latest.md`
-- Dated digest: `weekly/YYYY-MM-DD.md`
+- Latest rendered digest: `weekly/latest.html`
+- Latest Markdown draft: `weekly/latest.md`
+- Dated rendered digest: `weekly/YYYY-MM-DD.html`
+- Dated Markdown draft: `weekly/YYYY-MM-DD.md`
 
 The digest uses items from the most recent 7 days. If no items fall within that window, it falls back to the latest 20 items so the generated article is still useful.
 
@@ -150,7 +152,8 @@ Use this checklist whenever adding or repairing a journal.
    - Check `errors` is an empty list.
    - Review `weak_abstract_count` and the per-journal `weak_abstracts` values.
    - Review the `topics` section and confirm each expected topic feed has items.
-   - Open `public/weekly/latest.md` and confirm the weekly digest has sensible grouping and links.
+   - Open `public/weekly/latest.html` and confirm the weekly digest renders cleanly.
+   - Open `public/weekly/latest.md` and confirm the Markdown draft has sensible grouping and links.
 
 3. Check the public homepage.
    - Open `public/index.html`.

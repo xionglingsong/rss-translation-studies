@@ -784,6 +784,17 @@ def item_date_label(item):
     return parse_date(item.get("date")).strftime("%Y-%m-%d")
 
 
+def item_identity(item):
+    return item.get("doi") or item.get("link") or item.get("title")
+
+
+def item_primary_topic(item):
+    for tag in item.get("source_tags", []):
+        if tag in TOPIC_BY_SLUG:
+            return TOPIC_BY_SLUG[tag]["label"]
+    return "最新文章"
+
+
 def weekly_items(combined_items, generated_at):
     sorted_items = sorted(combined_items, key=lambda item: parse_date(item.get("date")), reverse=True)
     cutoff = generated_at - timedelta(days=WEEKLY_DAYS)
@@ -816,14 +827,13 @@ def build_weekly_markdown(combined_items, topic_stats, generated_at):
         topic_items = [
             item
             for item in selected_items
-            if topic["slug"] in item.get("source_tags", []) and (item.get("doi") or item.get("link") or item.get("title")) not in used_ids
+            if topic["slug"] in item.get("source_tags", []) and item_identity(item) not in used_ids
         ]
         if not topic_items:
             continue
         lines.extend([f"## {topic['label']}", ""])
         for item in topic_items:
-            item_id = item.get("doi") or item.get("link") or item.get("title")
-            used_ids.add(item_id)
+            used_ids.add(item_identity(item))
             title = markdown_escape(item.get("title") or "Untitled")
             lines.extend(
                 [
@@ -844,7 +854,7 @@ def build_weekly_markdown(combined_items, topic_stats, generated_at):
     uncategorized = [
         item
         for item in selected_items
-        if (item.get("doi") or item.get("link") or item.get("title")) not in used_ids
+        if item_identity(item) not in used_ids
     ]
     if uncategorized:
         lines.extend(["## 其他更新", ""])
@@ -861,6 +871,186 @@ def build_weekly_markdown(combined_items, topic_stats, generated_at):
                 ]
             )
     return "\n".join(lines).strip() + "\n"
+
+
+def build_weekly_html(combined_items, topic_stats, generated_at, markdown_path):
+    selected_items, scope_label = weekly_items(combined_items, generated_at)
+    generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
+    date_slug = generated_at.strftime("%Y-%m-%d")
+    used_ids = set()
+    topic_sections = []
+    for topic in topic_stats:
+        cards = []
+        for item in selected_items:
+            item_id = item_identity(item)
+            if topic["slug"] not in item.get("source_tags", []) or item_id in used_ids:
+                continue
+            used_ids.add(item_id)
+            title = html.escape(item.get("title") or "Untitled")
+            link = html.escape(item.get("link") or "#")
+            journal = html.escape(item.get("source_title") or item.get("journal") or "")
+            creator = html.escape(markdown_escape(item.get("creator") or ""))
+            creator_html = f"<p class=\"byline\">{creator}</p>" if creator else ""
+            doi_html = f"<span>DOI: {html.escape(item['doi'])}</span>" if item.get("doi") else ""
+            summary = html.escape(markdown_summary(item))
+            cards.append(
+                f"""
+                <article class="paper-card">
+                  <div class="meta">
+                    <span>{html.escape(item_date_label(item))}</span>
+                    <span>{journal}</span>
+                    {doi_html}
+                  </div>
+                  <h3><a href="{link}">{title}</a></h3>
+                  {creator_html}
+                  <p>{summary}</p>
+                </article>
+                """
+            )
+        if cards:
+            topic_sections.append(
+                f"""
+                <section class="topic-section">
+                  <h2>{html.escape(topic["label"])}</h2>
+                  <div class="paper-list">{"".join(cards)}</div>
+                </section>
+                """
+            )
+    body = "".join(topic_sections) or '<p class="empty">本周暂未检测到新条目。</p>'
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>翻译学新论文速递：{date_slug}</title>
+  <meta name="description" content="翻译学期刊本周新论文摘要合集，按研究方向分组。">
+  <style>
+    :root {{
+      color-scheme: light;
+      --ink: #243036;
+      --muted: #68757b;
+      --line: #d9d2c2;
+      --panel: #fffdf7;
+      --panel-strong: #ffffff;
+      --bg: #f4efe4;
+      --accent: #087f73;
+      --blue: #315f8f;
+      --paper: #fbf8ef;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background:
+        linear-gradient(90deg, rgba(36, 48, 54, .035) 1px, transparent 1px),
+        linear-gradient(rgba(36, 48, 54, .025) 1px, transparent 1px),
+        var(--bg);
+      background-size: 34px 34px;
+      color: var(--ink);
+      font: 16px/1.62 "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", serif;
+    }}
+    a {{ color: inherit; }}
+    .wrap {{ max-width: 980px; margin: 0 auto; padding: 28px; }}
+    header {{
+      border-bottom: 1px solid var(--line);
+      background: var(--paper);
+    }}
+    h1 {{
+      margin: 0;
+      font-size: clamp(34px, 6vw, 64px);
+      line-height: 1;
+      letter-spacing: 0;
+    }}
+    .lede {{ max-width: 720px; margin-top: 16px; color: var(--muted); font-size: 18px; }}
+    .actions {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }}
+    .button {{
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      border-radius: 6px;
+      padding: 9px 12px;
+      text-decoration: none;
+      font: 15px/1.2 ui-sans-serif, system-ui, sans-serif;
+    }}
+    .button.primary {{ background: var(--accent); border-color: var(--accent); color: #fff; }}
+    .summary {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }}
+    .summary span, .meta span {{
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: #eef4f8;
+      color: var(--blue);
+      font: 700 12px/1.2 ui-sans-serif, system-ui, sans-serif;
+    }}
+    main.wrap {{ display: grid; gap: 20px; }}
+    .topic-section {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 22px;
+    }}
+    .topic-section h2 {{ margin: 0 0 14px; color: var(--accent); letter-spacing: 0; }}
+    .paper-list {{ display: grid; gap: 12px; }}
+    .paper-card {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-strong);
+      padding: 16px;
+    }}
+    .paper-card h3 {{
+      margin: 10px 0 8px;
+      font: 700 20px/1.28 ui-sans-serif, system-ui, sans-serif;
+      letter-spacing: 0;
+    }}
+    .paper-card h3 a {{ text-decoration: none; }}
+    .paper-card p {{ margin: 0; color: #46545a; }}
+    .paper-card .byline {{
+      margin-bottom: 10px;
+      color: var(--muted);
+      font: 13px/1.35 ui-sans-serif, system-ui, sans-serif;
+    }}
+    .meta {{ display: flex; gap: 6px; flex-wrap: wrap; }}
+    .empty {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 18px;
+    }}
+    @media (max-width: 560px) {{
+      .wrap {{ padding: 18px; }}
+      .paper-card h3 {{ font-size: 17px; }}
+    }}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>翻译学新论文速递</h1>
+      <p class="lede">按研究方向整理的新近论文摘要合集，适合快速扫读、文献跟踪和转发分享。</p>
+      <div class="summary">
+        <span>{html.escape(scope_label)}</span>
+        <span>{date_slug}</span>
+        <span>{len(selected_items)} 条更新</span>
+        <span>{len({item.get("source_slug") for item in selected_items})} 本期刊</span>
+        <span>生成时间：{generated_label}</span>
+      </div>
+      <div class="actions">
+        <a class="button primary" href="../index.html">返回首页</a>
+        <a class="button" href="{html.escape(os.path.basename(markdown_path))}">Markdown 草稿</a>
+        <a class="button" href="../feed.xml">订阅总 RSS</a>
+      </div>
+    </div>
+  </header>
+  <main class="wrap">
+    {body}
+  </main>
+</body>
+</html>
+"""
 
 
 def generate_source(source, cache):
@@ -960,17 +1150,23 @@ def generate_all_feeds():
         )
     weekly_markdown = build_weekly_markdown(combined_items, topic_stats, generated_at)
     weekly_date = generated_at.strftime("%Y-%m-%d")
-    weekly_path = f"weekly/{weekly_date}.md"
-    outputs[weekly_path] = weekly_markdown
+    weekly_md_path = f"weekly/{weekly_date}.md"
+    weekly_html_path = f"weekly/{weekly_date}.html"
+    weekly_html = build_weekly_html(combined_items, topic_stats, generated_at, weekly_md_path)
+    outputs[weekly_md_path] = weekly_markdown
     outputs["weekly/latest.md"] = weekly_markdown
+    outputs[weekly_html_path] = weekly_html
+    outputs["weekly/latest.html"] = weekly_html
     outputs["manifest.json"] = json.dumps(
         {
             "title": "Translation Studies RSS",
             "generated_at": generated_at_iso,
             "combined_feed": "feed.xml",
             "weekly": {
-                "latest": "weekly/latest.md",
-                "dated": weekly_path,
+                "latest": "weekly/latest.html",
+                "latest_markdown": "weekly/latest.md",
+                "dated": weekly_html_path,
+                "dated_markdown": weekly_md_path,
             },
             "expected_journal_count": len(sources),
             "journal_count": len(stats),
@@ -984,7 +1180,16 @@ def generate_all_feeds():
         ensure_ascii=False,
         indent=2,
     )
-    outputs["index.html"] = build_public_index(stats, topic_stats, errors, len(combined_items), generated_at, weekly_path, combined_items)
+    outputs["index.html"] = build_public_index(
+        stats,
+        topic_stats,
+        errors,
+        len(combined_items),
+        generated_at,
+        weekly_html_path,
+        weekly_md_path,
+        combined_items,
+    )
     if errors:
         print("Skipped feeds:")
         for error in errors:
@@ -1007,7 +1212,14 @@ def validate_static_outputs(outputs, sources):
         for topic in TOPICS
         if topic_feed_name(topic["slug"]) not in outputs
     ]
-    missing_weekly = [name for name in ("weekly/latest.md", manifest.get("weekly", {}).get("dated", "")) if name not in outputs]
+    weekly_manifest = manifest.get("weekly", {})
+    expected_weekly_files = [
+        "weekly/latest.html",
+        "weekly/latest.md",
+        weekly_manifest.get("dated", ""),
+        weekly_manifest.get("dated_markdown", ""),
+    ]
+    missing_weekly = [name for name in expected_weekly_files if name and name not in outputs]
     if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_weekly:
         details = [
             f"expected {expected_count} journals, generated {actual_count}",
@@ -1026,13 +1238,33 @@ def weak_abstract(item):
     return not abstract or "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract)) or is_truncated_abstract(abstract)
 
 
-def build_public_index(stats, topic_stats, errors, item_count, generated_at, weekly_path, combined_items):
+def build_public_index(stats, topic_stats, errors, item_count, generated_at, weekly_path, weekly_md_path, combined_items):
     generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
     weak_total = sum(stat["weak_abstracts"] for stat in stats)
     translated_total = sum(stat["translated"] for stat in stats)
     selected_weekly_items, weekly_scope = weekly_items(combined_items, generated_at)
     weekly_count = len(selected_weekly_items)
     weekly_journal_count = len({item.get("source_slug") for item in selected_weekly_items})
+    ticker_items = sorted(combined_items, key=lambda item: parse_date(item.get("date")), reverse=True)[:12]
+    ticker_cards = []
+    for item in ticker_items:
+        title = html.escape(truncate_text(item.get("title") or "Untitled", 90))
+        link = html.escape(item.get("link") or "#")
+        topic_label = html.escape(item_primary_topic(item))
+        journal = html.escape(item.get("source_title") or item.get("journal") or "")
+        abstract_label = "有摘要" if not weak_abstract(item) else "待补摘要"
+        abstract_class = "ok" if not weak_abstract(item) else "watch"
+        ticker_cards.append(
+            f"""
+            <a class="ticker-card" href="{link}">
+              <span class="ticker-topic">{topic_label}</span>
+              <strong>{title}</strong>
+              <span>{journal} · {html.escape(item_date_label(item))}</span>
+              <span class="ticker-quality {abstract_class}">{abstract_label}</span>
+            </a>
+            """
+        )
+    ticker_html = "".join(ticker_cards + ticker_cards)
     weekly_topic_sections = []
     used_weekly_ids = set()
     for topic in topic_stats:
@@ -1352,6 +1584,83 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
       line-height: 1.2;
       margin-top: 8px;
     }}
+    .ticker-section {{
+      overflow: hidden;
+      padding: 16px 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 253, 247, .72);
+    }}
+    .ticker-head {{
+      max-width: 1180px;
+      margin: 0 auto 10px;
+      padding: 0 26px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }}
+    .ticker-head strong {{ font-size: 14px; }}
+    .ticker-head a {{
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .ticker-track {{
+      display: flex;
+      gap: 10px;
+      width: max-content;
+      animation: ticker-scroll 80s linear infinite;
+      padding-inline: 26px;
+    }}
+    .ticker-track:hover {{
+      animation-play-state: paused;
+    }}
+    .ticker-card {{
+      width: 330px;
+      min-height: 126px;
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      border-radius: 8px;
+      padding: 12px;
+      text-decoration: none;
+      display: grid;
+      gap: 7px;
+      align-content: start;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }}
+    .ticker-card strong {{
+      font-size: 14px;
+      line-height: 1.28;
+    }}
+    .ticker-card span {{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.25;
+    }}
+    .ticker-topic, .ticker-quality {{
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 3px 7px;
+      background: #eef4f8;
+      color: var(--blue) !important;
+      font-weight: 700;
+    }}
+    .ticker-quality.ok {{
+      background: var(--soft);
+      color: var(--accent) !important;
+    }}
+    .ticker-quality.watch {{
+      background: #fff0d2;
+      color: #8c5b00 !important;
+    }}
+    @keyframes ticker-scroll {{
+      from {{ transform: translateX(0); }}
+      to {{ transform: translateX(-50%); }}
+    }}
     section {{
       background: var(--panel);
       border: 1px solid var(--line);
@@ -1656,6 +1965,19 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
     }}
     @media (max-width: 760px) {{
       .wrap {{ padding: 18px; }}
+      .ticker-head {{ padding: 0 18px; }}
+      .ticker-track {{
+        width: auto;
+        overflow-x: auto;
+        animation: none;
+        padding-inline: 18px;
+        scroll-snap-type: x mandatory;
+      }}
+      .ticker-card {{
+        width: 280px;
+        flex: 0 0 280px;
+        scroll-snap-align: start;
+      }}
       .steps, .manage-grid {{ grid-template-columns: 1fr; }}
       .weekly-panel {{ grid-template-columns: 1fr; }}
       .update-list {{ grid-template-columns: 1fr; }}
@@ -1722,6 +2044,15 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
       </div>
     </div>
   </header>
+  <div class="ticker-section" aria-label="最新文章推荐">
+    <div class="ticker-head">
+      <strong>最新文章推荐</strong>
+      <a href="#weekly">查看本周更新</a>
+    </div>
+    <div class="ticker-track">
+      {ticker_html}
+    </div>
+  </div>
   <main class="wrap">
     <div class="stats">
       <div class="metric"><span>收录期刊</span><strong>{len(stats)}</strong></div>
@@ -1742,8 +2073,9 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
           </div>
         </div>
         <div class="weekly-actions">
-          <a class="button primary" href="weekly/latest.md">打开周报</a>
-          <button class="button" data-copy="weekly/latest.md">复制周报地址</button>
+          <a class="button primary" href="weekly/latest.html">阅读完整周报</a>
+          <button class="button" data-copy="weekly/latest.html">复制周报链接</button>
+          <a class="button" href="weekly/latest.md">Markdown 草稿</a>
           <a class="button" href="{html.escape(weekly_path)}">日期版</a>
         </div>
       </div>
@@ -1932,7 +2264,7 @@ class FeedHandler(BaseHTTPRequestHandler):
             self.send_text(200, "ok\n", "text/plain")
             return
         name = parsed.path.strip("/") or "feed.xml"
-        if name.endswith(".xml") or name.endswith(".md") or name in ("index.html", "manifest.json"):
+        if name.endswith(".xml") or name.endswith(".md") or name.endswith(".html") or name == "manifest.json":
             try:
                 force = urllib.parse.parse_qs(parsed.query).get("refresh") == ["1"]
                 if force or not self.rendered or time.time() - self.rendered_at > FEED_TTL_SECONDS:
@@ -1942,7 +2274,7 @@ class FeedHandler(BaseHTTPRequestHandler):
                 if body is None:
                     self.send_text(404, "Not found\n", "text/plain")
                     return
-                if name == "index.html":
+                if name.endswith(".html"):
                     content_type = "text/html"
                 elif name == "manifest.json":
                     content_type = "application/json"
@@ -1971,10 +2303,10 @@ def write_static_site(output_path):
     with open(os.path.join(output_dir, ".nojekyll"), "w", encoding="utf-8") as file:
         file.write("")
     weekly = json.loads(outputs["manifest.json"]).get("weekly", {})
-    if os.path.isdir(OBSIDIAN_WEEKLY_DIR) and weekly.get("dated"):
-        obsidian_file = os.path.join(OBSIDIAN_WEEKLY_DIR, f"翻译学新论文速递-{os.path.basename(weekly['dated'])}")
+    if os.path.isdir(OBSIDIAN_WEEKLY_DIR) and weekly.get("dated_markdown"):
+        obsidian_file = os.path.join(OBSIDIAN_WEEKLY_DIR, f"翻译学新论文速递-{os.path.basename(weekly['dated_markdown'])}")
         with open(obsidian_file, "w", encoding="utf-8") as file:
-            file.write(outputs[weekly["dated"]])
+            file.write(outputs[weekly["dated_markdown"]])
         print(f"Synced weekly digest to {obsidian_file}")
     print(f"Wrote {len(outputs)} files to {output_dir}")
 
