@@ -26,12 +26,14 @@ CACHE_PATH = os.environ.get("ABSTRACT_CACHE_PATH", os.path.join(BASE_DIR, "work"
 TRANSLATE_TO_ZH = os.environ.get("TRANSLATE_TO_ZH", "").lower() in ("1", "true", "yes")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_TRANSLATION_MODEL = os.environ.get("DEEPSEEK_TRANSLATION_MODEL", "deepseek-v4-flash")
+JINA_READER_API_KEY = os.environ.get("JINA_READER_API_KEY", "")
 TRANSLATION_PROMPT = (
     "作为一名精通简体中文、口笔译学科知识、统计学、心理学的专业翻译家，"
     "请将所提供的文本准确地翻译为简体中文。请仅回复翻译后的文本，不要任何其他内容。"
     "【待翻译文本】如下"
 )
 METADATA_TTL_SECONDS = 60 * 60 * 24 * 30
+NEGATIVE_METADATA_TTL_SECONDS = 60 * 60 * 24
 FEED_TTL_SECONDS = 60 * 30
 MAX_WORKERS = int(os.environ.get("RSS_MAX_WORKERS", "8"))
 MAX_ITEMS_PER_SOURCE = int(os.environ.get("RSS_MAX_ITEMS_PER_SOURCE", "8"))
@@ -96,13 +98,15 @@ NS = {
 }
 
 
-def fetch_text(url, accept="*/*", timeout=5, attempts=3, use_curl=True):
+def fetch_text(url, accept="*/*", timeout=5, attempts=3, use_curl=True, headers=None):
+    request_headers = {
+        "Accept": accept,
+        "User-Agent": USER_AGENT,
+        **(headers or {}),
+    }
     request = urllib.request.Request(
         url,
-        headers={
-            "Accept": accept,
-            "User-Agent": USER_AGENT,
-        },
+        headers=request_headers,
     )
     last_error = None
     for attempt in range(attempts):
@@ -116,8 +120,11 @@ def fetch_text(url, accept="*/*", timeout=5, attempts=3, use_curl=True):
 
     if use_curl and shutil.which("curl"):
         try:
+            curl_headers = []
+            for name, value in request_headers.items():
+                curl_headers.extend(["-H", f"{name}: {value}"])
             completed = subprocess.run(
-                ["curl", "-fsSL", "--max-time", str(timeout), "-A", USER_AGENT, "-H", f"Accept: {accept}", url],
+                ["curl", "-fsSL", "--max-time", str(timeout), "-A", USER_AGENT, *curl_headers, url],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -209,12 +216,36 @@ def strip_html(value):
     return value.strip()
 
 
+def clean_abstract_text(value):
+    value = re.sub(r"\[[^\]]+\]\([^)]+\)", "", value or "")
+    value = strip_html(value)
+    value = re.split(
+        r"\b(?:KEYWORDS?|Keywords?|Introduction|Disclosure statement|Acknowledgements|References)\s*:",
+        value,
+        maxsplit=1,
+    )[0]
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+
 def is_truncated_abstract(value):
     return bool(re.search(r"(\.\.\.|…)\s*$", value or ""))
 
 
+def is_boilerplate_abstract(value):
+    lowered = (value or "").lower()
+    boilerplate_terms = (
+        "citation & references download citations",
+        "your download is now in progress",
+        "with a free taylor & francis online account",
+        "save your searches and schedule alerts",
+        "copyright ©",
+    )
+    return any(term in lowered for term in boilerplate_terms)
+
+
 def usable_abstract(value):
-    return bool(value) and not is_truncated_abstract(value)
+    return bool(value) and not is_truncated_abstract(value) and not is_boilerplate_abstract(value)
 
 
 def source_type_label(source_type):
@@ -424,6 +455,151 @@ def article_page_metadata(url, cache):
     return metadata
 
 
+def text_from_element(element):
+    parts = []
+    for node in element.iter():
+        if local_name(node.tag).lower() == "title":
+            continue
+        if node.text:
+            parts.append(node.text)
+        if node.tail:
+            parts.append(node.tail)
+    return strip_html(" ".join(parts))
+
+
+def abstract_from_xml(xml_text):
+    try:
+        root = ET.fromstring(xml_text.lstrip("\ufeff"))
+    except ET.ParseError:
+        return ""
+    abstracts = []
+    for element in root.iter():
+        if local_name(element.tag).lower() == "abstract":
+            text = clean_abstract_text(text_from_element(element))
+            if text and len(text.split()) > 20:
+                abstracts.append(text)
+    return max(abstracts, key=len) if abstracts else ""
+
+
+def markdown_lines_to_abstract(lines, start_index):
+    section = []
+    for raw_line in lines[start_index + 1 :]:
+        line = raw_line.strip()
+        if not line:
+            if section:
+                continue
+            continue
+        lowered = re.sub(r"^[#*\s]+", "", line).strip().lower()
+        if lowered in ("keywords", "keyword", "introduction", "disclosure statement", "acknowledgements", "references"):
+            break
+        if re.match(r"^#{1,4}\s+\S", line) and section:
+            break
+        if line.startswith(("!", "|")) or line.lower().startswith(("image ", "table ")):
+            continue
+        section.append(line)
+    abstract = clean_abstract_text(" ".join(section))
+    abstract = re.sub(r"\s+", " ", abstract).strip()
+    return abstract if len(abstract.split()) > 20 else ""
+
+
+def abstract_from_reader_markdown(markdown):
+    lines = markdown.splitlines()
+    for index, raw_line in enumerate(lines):
+        normalized = re.sub(r"^[#*\s]+", "", raw_line).strip().lower()
+        if normalized == "abstract":
+            abstract = markdown_lines_to_abstract(lines, index)
+            if abstract:
+                return abstract
+    return ""
+
+
+def cached_remote_metadata(cache, bucket, url, fetcher):
+    page_cache = cache.setdefault(bucket, {})
+    cached = page_cache.get(url)
+    cached_metadata = (cached or {}).get("metadata") or {}
+    cached_ttl = METADATA_TTL_SECONDS if cached_metadata else NEGATIVE_METADATA_TTL_SECONDS
+    if cached and time.time() - cached.get("fetched_at", 0) < cached_ttl:
+        return cached.get("metadata") or {}
+    metadata = fetcher()
+    page_cache[url] = {"metadata": metadata, "fetched_at": time.time()}
+    return metadata
+
+
+def xml_page_metadata(url, cache):
+    def fetcher():
+        try:
+            xml_text = fetch_text(url, accept="application/xml,text/xml,*/*", timeout=5, attempts=1)
+        except Exception:
+            return {}
+        abstract = abstract_from_xml(xml_text)
+        return {"abstract": abstract, "abstract_source": "tandfonline-xml"} if usable_abstract(abstract) else {}
+
+    return cached_remote_metadata(cache, "_xml_pages", url, fetcher)
+
+
+def reader_page_metadata(url, cache):
+    reader_url = f"http://r.jina.ai/{url}"
+
+    def fetcher():
+        headers = {"X-Return-Format": "markdown"}
+        if JINA_READER_API_KEY:
+            headers["Authorization"] = f"Bearer {JINA_READER_API_KEY}"
+        try:
+            markdown = fetch_text(reader_url, accept="text/plain,*/*", timeout=8, attempts=1, headers=headers)
+        except Exception:
+            return {}
+        abstract = abstract_from_reader_markdown(markdown)
+        return {"abstract": abstract, "abstract_source": "tandfonline-reader"} if usable_abstract(abstract) else {}
+
+    return cached_remote_metadata(cache, "_reader_pages", reader_url, fetcher)
+
+
+def tandfonline_urls(item):
+    doi = item.get("doi") or extract_doi(item.get("link", ""))
+    urls = []
+    for url in item.get("metadata_links", []):
+        if "tandfonline.com/doi/full-xml/" in url and url not in urls:
+            urls.append(url)
+    if doi:
+        encoded_doi = urllib.parse.quote(doi, safe="/")
+        xml_url = f"https://www.tandfonline.com/doi/full-xml/{encoded_doi}"
+        page_url = f"https://www.tandfonline.com/doi/full/{encoded_doi}"
+        for url in (xml_url, page_url):
+            if url not in urls:
+                urls.append(url)
+    if item.get("link") and item["link"] not in urls:
+        urls.append(item["link"])
+    return urls
+
+
+def enrich_tandfonline_abstract(item, cache):
+    if not weak_abstract(item):
+        return item
+    urls = tandfonline_urls(item)
+    for url in urls:
+        if "/doi/full-xml/" not in url:
+            continue
+        metadata = xml_page_metadata(url, cache)
+        if usable_abstract(metadata.get("abstract", "")):
+            merge_missing(item, metadata)
+            return item
+    for url in urls:
+        if "/doi/full-xml/" in url:
+            continue
+        metadata = reader_page_metadata(url, cache)
+        if usable_abstract(metadata.get("abstract", "")):
+            merge_missing(item, metadata)
+            return item
+    return item
+
+
+def safe_enrich_tandfonline_abstract(item, cache):
+    try:
+        return enrich_tandfonline_abstract(item, cache)
+    except Exception:
+        return item
+
+
 def merge_missing(item, metadata):
     for key in ("title", "date", "journal", "volume", "issue", "pages"):
         if not item.get(key) and metadata.get(key):
@@ -434,6 +610,8 @@ def merge_missing(item, metadata):
         item["creator"] = metadata["creator"]
     if usable_abstract(metadata.get("abstract", "")):
         item["abstract"] = metadata["abstract"]
+        if metadata.get("abstract_source"):
+            item["abstract_source"] = metadata["abstract_source"]
 
 
 def should_replace_creator(value):
@@ -672,6 +850,11 @@ def parse_crossref_source(source):
         if is_truncated_abstract(abstract):
             abstract = ""
         link = work.get("URL") or (f"https://doi.org/{doi}" if doi else source["homepage"])
+        metadata_links = [
+            link_data.get("URL")
+            for link_data in work.get("link") or []
+            if link_data.get("URL") and "tandfonline.com/doi/full-xml/" in link_data.get("URL")
+        ]
         items.append(
             {
                 "title": title,
@@ -687,6 +870,7 @@ def parse_crossref_source(source):
                 "volume": work.get("volume") or "",
                 "issue": work.get("issue") or "",
                 "pages": work.get("page") or "",
+                "metadata_links": metadata_links,
             }
         )
     return {
@@ -1065,6 +1249,9 @@ def generate_source(source, cache):
             merge_missing(item, metadata)
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         items = list(executor.map(lambda item: enrich_item(item, cache), items_to_enrich))
+    if source.get("enrich_tandfonline_abstracts"):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, MAX_WORKERS)) as executor:
+            items = list(executor.map(lambda item: safe_enrich_tandfonline_abstract(item, cache), items))
     if TRANSLATE_TO_ZH and DEEPSEEK_API_KEY:
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, MAX_WORKERS)) as executor:
             items = list(executor.map(lambda item: translate_item(item, cache), items))
@@ -1235,7 +1422,13 @@ def validate_static_outputs(outputs, sources):
 
 def weak_abstract(item):
     abstract = item.get("abstract") or item.get("fallback_description") or ""
-    return not abstract or "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract)) or is_truncated_abstract(abstract)
+    return (
+        not abstract
+        or "No abstract found" in abstract
+        or bool(re.match(r"^Volume \d+", abstract))
+        or is_truncated_abstract(abstract)
+        or is_boilerplate_abstract(abstract)
+    )
 
 
 def build_public_index(stats, topic_stats, errors, item_count, generated_at, weekly_path, weekly_md_path, combined_items):

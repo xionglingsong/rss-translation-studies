@@ -132,9 +132,9 @@ The site publishes a rendered weekly digest for readers and Markdown drafts for 
 
 The digest uses items from the most recent 7 days. If no items fall within that window, it falls back to the latest 20 items so the generated article is still useful.
 
-Taylor & Francis, John Benjamins, and JAT entries use Crossref on GitHub Pages because some publisher RSS endpoints may reject GitHub-hosted requests. SAGE and OJS feeds are enriched through DOI or article-page metadata when their RSS entries omit fields such as abstracts, DOIs, or pages. Some reviews or editorial material may not have a public abstract in any metadata source.
+Taylor & Francis, John Benjamins, and JAT entries use Crossref on GitHub Pages because some publisher RSS endpoints may reject GitHub-hosted requests. Taylor & Francis items also try the publisher TDM XML link and a rendered-reader fallback when Crossref/OpenAlex/Semantic Scholar do not expose abstracts. SAGE and OJS feeds are enriched through DOI or article-page metadata when their RSS entries omit fields such as abstracts, DOIs, or pages. Some reviews or editorial material may not have a public abstract in any metadata source.
 
-To publish Chinese translations on GitHub Pages, add a `DEEPSEEK_API_KEY` repository secret. The workflow already enables `TRANSLATE_TO_ZH`.
+To publish Chinese translations on GitHub Pages, add a `DEEPSEEK_API_KEY` repository secret. The workflow already enables `TRANSLATE_TO_ZH`. To improve Taylor & Francis rendered-reader reliability or rate limits, optionally add `JINA_READER_API_KEY`.
 
 ## Maintenance Checklist
 

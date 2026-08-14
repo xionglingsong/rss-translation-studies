@@ -7,6 +7,7 @@
     "issn": "1751-2921",
     "homepage": "https://www.tandfonline.com/journals/rtrs20",
     "source_feed": "https://www.tandfonline.com/feed/rss/rtrs20",
+    "enrich_tandfonline_abstracts": true,
     "tags": ["general-translation-studies", "society-culture"],
     "description": "Routledge journal Translation Studies."
   },
@@ -18,6 +19,7 @@
     "issn": "1747-6623",
     "homepage": "https://www.tandfonline.com/journals/rmps20",
     "source_feed": "https://www.tandfonline.com/feed/rss/rmps20",
+    "enrich_tandfonline_abstracts": true,
     "tags": ["general-translation-studies", "translator-education"],
     "description": "Perspectives: Studies in Translation Theory and Practice."
   },
@@ -29,6 +31,7 @@
     "issn": "1757-0409",
     "homepage": "https://www.tandfonline.com/journals/rtrn20",
     "source_feed": "https://www.tandfonline.com/feed/rss/rtrn20",
+    "enrich_tandfonline_abstracts": true,
     "tags": ["general-translation-studies", "society-culture"],
     "description": "The Translator."
   },
@@ -40,6 +43,7 @@
     "issn": "1757-0417",
     "homepage": "https://www.tandfonline.com/journals/ritt20",
     "source_feed": "https://www.tandfonline.com/feed/rss/ritt20",
+    "enrich_tandfonline_abstracts": true,
     "tags": ["translator-education", "interpreting"],
     "description": "The Interpreter and Translator Trainer."
   },
@@ -51,6 +55,7 @@
     "issn": "2330-6351",
     "homepage": "https://www.tandfonline.com/journals/rtis20",
     "source_feed": "https://www.tandfonline.com/feed/rss/rtis20",
+    "enrich_tandfonline_abstracts": true,
     "tags": ["general-translation-studies", "society-culture"],
     "description": "Asia Pacific Translation and Intercultural Studies."
   },
@@ -62,6 +67,7 @@
     "issn": "2164-0564",
     "homepage": "https://www.tandfonline.com/journals/utrv20",
     "source_feed": "https://www.tandfonline.com/feed/rss/utrv20",
+    "enrich_tandfonline_abstracts": true,
     "tags": ["general-translation-studies", "society-culture"],
     "description": "Translation Review."
   },
