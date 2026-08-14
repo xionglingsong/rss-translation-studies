@@ -21,6 +21,13 @@ http://127.0.0.1:8765/target.xml
 http://127.0.0.1:8765/translation-studies.xml
 ```
 
+Topic feeds are generated from the `tags` field in `journals.json`, for example:
+
+```text
+http://127.0.0.1:8765/topic-interpreting.xml
+http://127.0.0.1:8765/topic-digital-ai-translation.xml
+```
+
 ## Notes
 
 - Journals are configured in `journals.json`.
@@ -38,7 +45,7 @@ python3 server.py --once public/feed.xml
 
 This writes `public/feed.xml`, `public/index.html`, and one XML file per journal.
 
-The static build also checks that every journal in `journals.json` produced a feed. A failed source, missing per-journal XML file, or journal-count mismatch will raise an error.
+The static build also checks that every journal in `journals.json` produced a feed. A failed source, missing per-journal XML file, missing topic feed, or journal-count mismatch will raise an error.
 
 To include Chinese translations locally:
 
@@ -91,6 +98,19 @@ https://xionglingsong.github.io/rss-translation-studies/feed.xml
 - The Journal of Specialised Translation
 - Interpreting and Society
 
+## Topic Feeds
+
+The project also publishes topic-specific RSS feeds. These are generated from journal-level tags, so a journal can appear in more than one topic.
+
+- 综合翻译学: `topic-general-translation-studies.xml`
+- 口译研究: `topic-interpreting.xml`
+- 译者教育: `topic-translator-education.xml`
+- 社会文化: `topic-society-culture.xml`
+- 认知过程: `topic-cognition-process.xml`
+- 数字与 AI 翻译: `topic-digital-ai-translation.xml`
+- 视听翻译: `topic-audiovisual-translation.xml`
+- 术语与专门用途翻译: `topic-terminology-specialized-translation.xml`
+
 Taylor & Francis, John Benjamins, and JAT entries use Crossref on GitHub Pages because some publisher RSS endpoints may reject GitHub-hosted requests. SAGE and OJS feeds are enriched through DOI or article-page metadata when their RSS entries omit fields such as abstracts, DOIs, or pages. Some reviews or editorial material may not have a public abstract in any metadata source.
 
 To publish Chinese translations on GitHub Pages, add a `DEEPSEEK_API_KEY` repository secret. The workflow already enables `TRANSLATE_TO_ZH`.
@@ -101,6 +121,7 @@ Use this checklist whenever adding or repairing a journal.
 
 1. Add or update the journal in `journals.json`.
    - Include `slug`, `title`, `publisher`, `homepage`, and either `source_feed` or Crossref fields.
+   - Add at least one `tags` value so the journal appears in the relevant topic feeds.
    - Prefer a stable official RSS feed when it works on GitHub Actions.
    - Use `source_type: "crossref"` when publisher RSS blocks GitHub-hosted requests or omits too much metadata.
 
@@ -109,11 +130,13 @@ Use this checklist whenever adding or repairing a journal.
    - Open `public/manifest.json` and confirm `journal_count` equals the number of entries in `journals.json`.
    - Check `errors` is an empty list.
    - Review `weak_abstract_count` and the per-journal `weak_abstracts` values.
+   - Review the `topics` section and confirm each expected topic feed has items.
 
 3. Check the public homepage.
    - Open `public/index.html`.
    - Confirm the journal list is complete.
-   - Confirm each row shows source type, current build status, item count, Chinese count, and abstract status.
+   - Confirm each row shows source type, topic tags, current build status, item count, Chinese count, and abstract status.
+   - Confirm the topic subscription cards show sensible journal and item counts.
    - Test the combined RSS button and at least one per-journal RSS link.
 
 4. Update public documentation.

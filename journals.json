@@ -7,6 +7,7 @@
     "issn": "1751-2921",
     "homepage": "https://www.tandfonline.com/journals/rtrs20",
     "source_feed": "https://www.tandfonline.com/feed/rss/rtrs20",
+    "tags": ["general-translation-studies", "society-culture"],
     "description": "Routledge journal Translation Studies."
   },
   {
@@ -17,6 +18,7 @@
     "issn": "1747-6623",
     "homepage": "https://www.tandfonline.com/journals/rmps20",
     "source_feed": "https://www.tandfonline.com/feed/rss/rmps20",
+    "tags": ["general-translation-studies", "translator-education"],
     "description": "Perspectives: Studies in Translation Theory and Practice."
   },
   {
@@ -27,6 +29,7 @@
     "issn": "1757-0409",
     "homepage": "https://www.tandfonline.com/journals/rtrn20",
     "source_feed": "https://www.tandfonline.com/feed/rss/rtrn20",
+    "tags": ["general-translation-studies", "society-culture"],
     "description": "The Translator."
   },
   {
@@ -37,6 +40,7 @@
     "issn": "1757-0417",
     "homepage": "https://www.tandfonline.com/journals/ritt20",
     "source_feed": "https://www.tandfonline.com/feed/rss/ritt20",
+    "tags": ["translator-education", "interpreting"],
     "description": "The Interpreter and Translator Trainer."
   },
   {
@@ -47,6 +51,7 @@
     "issn": "2330-6351",
     "homepage": "https://www.tandfonline.com/journals/rtis20",
     "source_feed": "https://www.tandfonline.com/feed/rss/rtis20",
+    "tags": ["general-translation-studies", "society-culture"],
     "description": "Asia Pacific Translation and Intercultural Studies."
   },
   {
@@ -57,6 +62,7 @@
     "issn": "2164-0564",
     "homepage": "https://www.tandfonline.com/journals/utrv20",
     "source_feed": "https://www.tandfonline.com/feed/rss/utrv20",
+    "tags": ["general-translation-studies", "society-culture"],
     "description": "Translation Review."
   },
   {
@@ -67,6 +73,7 @@
     "issn": "1569-9986",
     "homepage": "https://www.jbe-platform.com/content/journals/15699986",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/15699986/latestarticles",
+    "tags": ["general-translation-studies", "society-culture"],
     "description": "Target. International Journal of Translation Studies."
   },
   {
@@ -77,6 +84,7 @@
     "issn": "1569-982X",
     "homepage": "https://www.jbe-platform.com/content/journals/1569982x",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/1569982x/latestarticles",
+    "tags": ["interpreting"],
     "description": "Interpreting: International Journal of Research and Practice in Interpreting."
   },
   {
@@ -87,6 +95,7 @@
     "issn": "1876-2700",
     "homepage": "https://www.jbe-platform.com/content/journals/18762700",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/18762700/latestarticles",
+    "tags": ["general-translation-studies", "interpreting"],
     "description": "Translation and Interpreting Studies."
   },
   {
@@ -97,6 +106,7 @@
     "issn": "2211-372X",
     "homepage": "https://www.jbe-platform.com/content/journals/2211372x",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/2211372x/latestarticles",
+    "tags": ["general-translation-studies", "society-culture"],
     "description": "Translation Spaces."
   },
   {
@@ -107,6 +117,7 @@
     "issn": "1569-9668",
     "homepage": "https://www.jbe-platform.com/content/journals/15699668",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/15699668/latestarticles",
+    "tags": ["general-translation-studies", "society-culture"],
     "description": "Babel: Revue internationale de la traduction / International Journal of Translation."
   },
   {
@@ -117,6 +128,7 @@
     "issn": "2451-909X",
     "homepage": "https://www.jbe-platform.com/content/journals/2451909x",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/2451909x/latestarticles",
+    "tags": ["interpreting", "general-translation-studies"],
     "description": "FORUM: International Journal of Interpretation and Translation."
   },
   {
@@ -127,6 +139,7 @@
     "issn": "2667-3045",
     "homepage": "https://www.jbe-platform.com/content/journals/26673045",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/26673045/latestarticles",
+    "tags": ["society-culture", "general-translation-studies"],
     "description": "Translation in Society."
   },
   {
@@ -137,6 +150,7 @@
     "issn": "2542-5285",
     "homepage": "https://www.jbe-platform.com/content/journals/25425285",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/25425285/latestarticles",
+    "tags": ["cognition-process"],
     "description": "Translation, Cognition & Behavior."
   },
   {
@@ -147,6 +161,7 @@
     "issn": "2352-1813",
     "homepage": "https://www.jbe-platform.com/content/journals/23521813",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/23521813/latestarticles",
+    "tags": ["society-culture", "general-translation-studies"],
     "description": "Translation and Translanguaging in Multilingual Contexts."
   },
   {
@@ -157,6 +172,7 @@
     "issn": "2949-6845",
     "homepage": "https://www.jbe-platform.com/content/journals/29496845",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/29496845/latestarticles",
+    "tags": ["digital-ai-translation"],
     "description": "Digital Translation."
   },
   {
@@ -167,6 +183,7 @@
     "issn": "2799-8592",
     "homepage": "https://www.jbe-platform.com/content/journals/27998592",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/27998592/latestarticles",
+    "tags": ["society-culture", "general-translation-studies"],
     "description": "InContext."
   },
   {
@@ -177,6 +194,7 @@
     "issn": "1569-9994",
     "homepage": "https://www.jbe-platform.com/content/journals/15699994",
     "source_feed": "https://www.jbe-platform.com/rss/feed?feedId=/content/journals/15699994/latestarticles",
+    "tags": ["terminology-specialized-translation"],
     "description": "Terminology: International Journal of Theoretical and Applied Issues in Specialized Communication."
   },
   {
@@ -186,6 +204,7 @@
     "homepage": "https://www.erudit.org/en/journals/meta/",
     "source_feed": "https://www.erudit.org/en/journals/meta/rss.xml",
     "split_description_author": true,
+    "tags": ["general-translation-studies", "terminology-specialized-translation"],
     "description": "Meta: Translators' Journal."
   },
   {
@@ -197,6 +216,7 @@
     "homepage": "https://jatjournal.org/index.php/jat/index",
     "source_feed": "https://jatjournal.org/index.php/jat/gateway/plugin/WebFeedGatewayPlugin/rss2",
     "enrich_from_article_page": true,
+    "tags": ["audiovisual-translation"],
     "description": "Journal of Audiovisual Translation."
   },
   {
@@ -207,6 +227,7 @@
     "source_feed": "https://www.jostrans.org/gateway/plugin/WebFeedGatewayPlugin/rss2",
     "enrich_from_article_page": true,
     "max_items": 16,
+    "tags": ["terminology-specialized-translation", "digital-ai-translation"],
     "description": "JoSTrans: The Journal of Specialised Translation."
   },
   {
@@ -215,6 +236,7 @@
     "publisher": "SAGE",
     "homepage": "https://journals.sagepub.com/home/isy",
     "source_feed": "https://journals.sagepub.com/action/showFeed?type=etoc&feed=rss&jc=isy",
+    "tags": ["interpreting", "society-culture"],
     "description": "Interpreting and Society: An Interdisciplinary Journal."
   }
 ]

@@ -36,6 +36,50 @@ FEED_TTL_SECONDS = 60 * 30
 MAX_WORKERS = int(os.environ.get("RSS_MAX_WORKERS", "8"))
 MAX_ITEMS_PER_SOURCE = int(os.environ.get("RSS_MAX_ITEMS_PER_SOURCE", "8"))
 
+TOPICS = [
+    {
+        "slug": "general-translation-studies",
+        "label": "综合翻译学",
+        "description": "翻译理论、翻译实践、翻译史与跨学科翻译研究。",
+    },
+    {
+        "slug": "interpreting",
+        "label": "口译研究",
+        "description": "会议口译、社区口译、口译实践与口译社会研究。",
+    },
+    {
+        "slug": "translator-education",
+        "label": "译者教育",
+        "description": "翻译与口译教学、课程设计、训练方法与评估。",
+    },
+    {
+        "slug": "society-culture",
+        "label": "社会文化",
+        "description": "翻译社会学、跨文化传播、多语环境与区域研究。",
+    },
+    {
+        "slug": "cognition-process",
+        "label": "认知过程",
+        "description": "翻译认知、行为实验、过程研究与译者决策。",
+    },
+    {
+        "slug": "digital-ai-translation",
+        "label": "数字与 AI 翻译",
+        "description": "机器翻译、本地化、数字媒介与技术驱动的翻译实践。",
+    },
+    {
+        "slug": "audiovisual-translation",
+        "label": "视听翻译",
+        "description": "字幕、配音、无障碍传播、屏幕翻译与多模态翻译。",
+    },
+    {
+        "slug": "terminology-specialized-translation",
+        "label": "术语与专门用途翻译",
+        "description": "术语学、专门用途语言、专门翻译与知识传播。",
+    },
+]
+TOPIC_BY_SLUG = {topic["slug"]: topic for topic in TOPICS}
+
 NS = {
     "atom": "http://www.w3.org/2005/Atom",
     "content": "http://purl.org/rss/1.0/modules/content/",
@@ -94,7 +138,15 @@ def save_json(path, data):
 
 
 def load_journals():
-    return load_json(CONFIG_PATH, [])
+    journals = load_json(CONFIG_PATH, [])
+    for journal in journals:
+        tags = journal.get("tags", [])
+        if not tags:
+            raise ValueError(f"Missing topic tags for {journal.get('slug', 'unknown')}")
+        unknown_tags = [tag for tag in tags if tag not in TOPIC_BY_SLUG]
+        if unknown_tags:
+            raise ValueError(f"Unknown topic tags for {journal.get('slug', 'unknown')}: {', '.join(unknown_tags)}")
+    return journals
 
 
 class MetaTagParser(HTMLParser):
@@ -165,6 +217,14 @@ def source_type_label(source_type):
         "rss": "官方 RSS",
     }
     return labels.get(source_type or "rss", source_type or "RSS")
+
+
+def topic_feed_name(slug):
+    return f"topic-{slug}.xml"
+
+
+def topic_labels(tags):
+    return [TOPIC_BY_SLUG[tag]["label"] for tag in tags if tag in TOPIC_BY_SLUG]
 
 
 def extract_doi(*values):
@@ -728,6 +788,9 @@ def generate_all_feeds():
     for source in sources:
         try:
             feed, items = generate_source(source, cache)
+            tags = source.get("tags", [])
+            for item in items:
+                item["source_tags"] = tags
             combined_items.extend(items)
             weak_abstracts = sum(1 for item in items if weak_abstract(item))
             source_type = source.get("source_type", "rss")
@@ -741,6 +804,8 @@ def generate_all_feeds():
                     "source_feed": source.get("source_feed", ""),
                     "source_type": source_type,
                     "source_label": source_type_label(source_type),
+                    "tags": tags,
+                    "tag_labels": topic_labels(tags),
                     "status": "ok",
                     "status_label": "本次成功",
                     "last_success_at": generated_at_iso,
@@ -765,6 +830,27 @@ def generate_all_feeds():
         "Combined enhanced RSS feed for translation and interpreting studies journals.",
         combined_items,
     )
+    topic_stats = []
+    for topic in TOPICS:
+        topic_items = [item for item in combined_items if topic["slug"] in item.get("source_tags", [])]
+        journal_count = sum(1 for stat in stats if topic["slug"] in stat.get("tags", []))
+        feed_name = topic_feed_name(topic["slug"])
+        outputs[feed_name] = build_rss(
+            f"{topic['label']} - Translation Studies Journals",
+            f"https://xionglingsong.github.io/rss-translation-studies/{feed_name}",
+            topic["description"],
+            topic_items,
+        )
+        topic_stats.append(
+            {
+                "slug": topic["slug"],
+                "label": topic["label"],
+                "description": topic["description"],
+                "feed": feed_name,
+                "journal_count": journal_count,
+                "item_count": len(topic_items),
+            }
+        )
     outputs["manifest.json"] = json.dumps(
         {
             "title": "Translation Studies RSS",
@@ -775,13 +861,14 @@ def generate_all_feeds():
             "item_count": len(combined_items),
             "translated_count": sum(stat["translated"] for stat in stats),
             "weak_abstract_count": sum(stat["weak_abstracts"] for stat in stats),
+            "topics": topic_stats,
             "journals": stats,
             "errors": errors,
         },
         ensure_ascii=False,
         indent=2,
     )
-    outputs["index.html"] = build_public_index(stats, errors, len(combined_items), generated_at)
+    outputs["index.html"] = build_public_index(stats, topic_stats, errors, len(combined_items), generated_at)
     if errors:
         print("Skipped feeds:")
         for error in errors:
@@ -799,11 +886,17 @@ def validate_static_outputs(outputs, sources):
         for source in sources
         if f"{source['slug']}.xml" not in outputs
     ]
-    if errors or actual_count != expected_count or missing_feeds:
+    missing_topic_feeds = [
+        topic["slug"]
+        for topic in TOPICS
+        if topic_feed_name(topic["slug"]) not in outputs
+    ]
+    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds:
         details = [
             f"expected {expected_count} journals, generated {actual_count}",
             f"errors: {len(errors)}",
             f"missing feeds: {', '.join(missing_feeds) if missing_feeds else 'none'}",
+            f"missing topic feeds: {', '.join(missing_topic_feeds) if missing_topic_feeds else 'none'}",
         ]
         if errors:
             details.extend(errors)
@@ -815,30 +908,52 @@ def weak_abstract(item):
     return not abstract or "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract)) or is_truncated_abstract(abstract)
 
 
-def build_public_index(stats, errors, item_count, generated_at):
+def build_public_index(stats, topic_stats, errors, item_count, generated_at):
     generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
     weak_total = sum(stat["weak_abstracts"] for stat in stats)
     translated_total = sum(stat["translated"] for stat in stats)
+    topic_cards = []
+    for topic in topic_stats:
+        topic_cards.append(
+            f"""
+            <article class="topic-card">
+              <div>
+                <h3>{html.escape(topic["label"])}</h3>
+                <p>{html.escape(topic["description"])}</p>
+              </div>
+              <div class="topic-meta">
+                <span>{topic["journal_count"]} 本期刊</span>
+                <span>{topic["item_count"]} 条</span>
+              </div>
+              <div class="topic-actions">
+                <a class="icon-button" href="{html.escape(topic["feed"])}">RSS</a>
+                <button class="icon-button" data-copy="{html.escape(topic["feed"])}">Copy</button>
+              </div>
+            </article>
+            """
+        )
     journal_rows = []
     for stat in stats:
         quality_class = "good" if stat["weak_abstracts"] == 0 else "watch"
         quality_label = "完整" if stat["weak_abstracts"] == 0 else f"{stat['weak_abstracts']} 条待补"
         status_title = f"最近成功：{generated_label}"
+        tags_html = "".join(f'<span class="tag-chip">{html.escape(label)}</span>' for label in stat.get("tag_labels", []))
         journal_rows.append(
             f"""
             <tr>
-              <td>
+              <td data-label="期刊">
                 <strong>{html.escape(stat["title"])}</strong>
                 <span>{html.escape(stat["publisher"])}</span>
+                <div class="tag-list">{tags_html}</div>
               </td>
-              <td><span class="number">{stat["items"]}</span></td>
-              <td><span class="number">{stat["translated"]}</span></td>
-              <td>
+              <td data-label="条目"><span class="number">{stat["items"]}</span></td>
+              <td data-label="中文"><span class="number">{stat["translated"]}</span></td>
+              <td data-label="来源">
                 <span class="source-chip">{html.escape(stat["source_label"])}</span>
                 <span class="status-line" title="{html.escape(status_title)}">{html.escape(stat["status_label"])}</span>
               </td>
-              <td><span class="quality {quality_class}">{quality_label}</span></td>
-              <td class="actions-cell">
+              <td data-label="摘要状态"><span class="quality {quality_class}">{quality_label}</span></td>
+              <td class="actions-cell" data-label="操作">
                 <div class="actions">
                   <a class="icon-button" title="打开单刊 RSS" href="{html.escape(stat["feed"])}" aria-label="打开单刊 RSS">RSS</a>
                   <button class="icon-button" title="复制单刊订阅地址" data-copy="{html.escape(stat["feed"])}" aria-label="复制单刊订阅地址">Copy</button>
@@ -1087,7 +1202,7 @@ def build_public_index(stats, errors, item_count, generated_at):
       margin-bottom: 16px;
     }}
     .section-head p {{ max-width: 560px; }}
-    .steps, .clients {{
+    .steps, .clients, .topic-grid {{
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
@@ -1125,6 +1240,51 @@ def build_public_index(stats, errors, item_count, generated_at):
       font-size: 13px;
     }}
     .client-link span {{ color: var(--muted); }}
+    .topic-grid {{
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }}
+    .topic-card {{
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 220px;
+      display: grid;
+      grid-template-rows: 1fr auto auto;
+      gap: 12px;
+    }}
+    .topic-card p {{
+      font-size: 14px;
+    }}
+    .topic-meta {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .topic-meta span, .tag-chip {{
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 3px 8px;
+      background: #eef4f8;
+      color: var(--blue);
+      font: 700 12px/1.2 ui-sans-serif, system-ui, sans-serif;
+    }}
+    .topic-actions {{
+      display: flex;
+      gap: 6px;
+    }}
+    .tag-list {{
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }}
+    .tag-chip {{
+      background: #f4efe4;
+      color: var(--muted);
+      font-size: 11px;
+    }}
     .source-grid {{
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1249,7 +1409,7 @@ def build_public_index(stats, errors, item_count, generated_at):
     }}
     @media (max-width: 900px) {{
       .topline {{ grid-template-columns: 1fr; min-height: auto; }}
-      .stats, .clients, .source-grid {{ grid-template-columns: 1fr 1fr; }}
+      .stats, .clients, .topic-grid, .source-grid {{ grid-template-columns: 1fr 1fr; }}
     }}
     @media (max-width: 760px) {{
       .wrap {{ padding: 18px; }}
@@ -1260,16 +1420,32 @@ def build_public_index(stats, errors, item_count, generated_at):
       thead {{ display: none; }}
       tr {{ border-bottom: 1px solid var(--line); padding: 10px 0; }}
       tr:last-child {{ border-bottom: 0; }}
-      td {{ border-bottom: 0; padding: 4px 0; }}
+      th, td {{ width: 100% !important; }}
+      td {{
+        border-bottom: 0;
+        padding: 5px 0;
+        text-align: left !important;
+      }}
+      td[data-label]:not(:first-child)::before {{
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 3px;
+        color: var(--muted);
+        font: 700 11px/1.2 ui-sans-serif, system-ui, sans-serif;
+      }}
       .actions-cell {{ min-width: 0; }}
       .actions {{
         padding-top: 8px;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         min-width: 0;
+      }}
+      .actions .icon-button {{
+        min-width: 0;
+        flex: 1;
       }}
     }}
     @media (max-width: 520px) {{
-      .stats, .clients, .source-grid {{ grid-template-columns: 1fr; }}
+      .stats, .clients, .topic-grid, .source-grid {{ grid-template-columns: 1fr; }}
       .feed-url {{ flex-direction: column; }}
       h1 {{ font-size: 34px; }}
     }}
@@ -1285,6 +1461,7 @@ def build_public_index(stats, errors, item_count, generated_at):
         <div class="primary-actions">
           <a class="button primary" href="feed.xml">打开总 RSS</a>
           <button class="button" data-copy="feed.xml">复制订阅地址</button>
+          <a class="button" href="#topics">按方向订阅</a>
           <a class="button" href="#journals">查看期刊</a>
         </div>
       </div>
@@ -1382,6 +1559,16 @@ def build_public_index(stats, errors, item_count, generated_at):
           <h3>透明状态</h3>
           <p>期刊表里显示每个源的条目数和摘要完整度。Editorial、书评等可能本来就没有摘要。</p>
         </div>
+      </div>
+    </section>
+
+    <section id="topics">
+      <div class="section-head">
+        <h2>按研究方向订阅</h2>
+        <p>如果你不想订阅全部期刊，可以只订阅某个研究方向。分类 RSS 会自动汇总对应期刊的新文章。</p>
+      </div>
+      <div class="topic-grid">
+        {"".join(topic_cards)}
       </div>
     </section>
 
