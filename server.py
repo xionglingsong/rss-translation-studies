@@ -773,6 +773,13 @@ def markdown_summary(item):
     return markdown_escape(abstract)
 
 
+def truncate_text(value, limit=220):
+    value = re.sub(r"\s+", " ", value or "").strip()
+    if len(value) <= limit:
+        return value
+    return value[:limit].rstrip() + "..."
+
+
 def item_date_label(item):
     return parse_date(item.get("date")).strftime("%Y-%m-%d")
 
@@ -977,7 +984,7 @@ def generate_all_feeds():
         ensure_ascii=False,
         indent=2,
     )
-    outputs["index.html"] = build_public_index(stats, topic_stats, errors, len(combined_items), generated_at, weekly_path)
+    outputs["index.html"] = build_public_index(stats, topic_stats, errors, len(combined_items), generated_at, weekly_path, combined_items)
     if errors:
         print("Skipped feeds:")
         for error in errors:
@@ -1019,10 +1026,56 @@ def weak_abstract(item):
     return not abstract or "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract)) or is_truncated_abstract(abstract)
 
 
-def build_public_index(stats, topic_stats, errors, item_count, generated_at, weekly_path):
+def build_public_index(stats, topic_stats, errors, item_count, generated_at, weekly_path, combined_items):
     generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
     weak_total = sum(stat["weak_abstracts"] for stat in stats)
     translated_total = sum(stat["translated"] for stat in stats)
+    selected_weekly_items, weekly_scope = weekly_items(combined_items, generated_at)
+    weekly_count = len(selected_weekly_items)
+    weekly_journal_count = len({item.get("source_slug") for item in selected_weekly_items})
+    weekly_topic_sections = []
+    used_weekly_ids = set()
+    for topic in topic_stats:
+        topic_items = []
+        for item in selected_weekly_items:
+            item_id = item.get("doi") or item.get("link") or item.get("title")
+            if topic["slug"] in item.get("source_tags", []) and item_id not in used_weekly_ids:
+                topic_items.append(item)
+                used_weekly_ids.add(item_id)
+        if not topic_items:
+            continue
+        cards = []
+        for item in topic_items:
+            title = html.escape(item.get("title") or "Untitled")
+            journal = html.escape(item.get("source_title") or item.get("journal") or "")
+            creator = html.escape(truncate_text(item.get("creator") or "", 120))
+            summary = html.escape(truncate_text(markdown_summary(item), 180))
+            link = html.escape(item.get("link") or "#")
+            doi_html = f'<span>DOI: {html.escape(item["doi"])}</span>' if item.get("doi") else ""
+            creator_html = f"<span>{creator}</span>" if creator else ""
+            cards.append(
+                f"""
+                <article class="update-card">
+                  <div class="update-meta">
+                    <span>{html.escape(item_date_label(item))}</span>
+                    <span>{journal}</span>
+                    {doi_html}
+                  </div>
+                  <h4><a href="{link}">{title}</a></h4>
+                  <p>{summary}</p>
+                  <div class="update-byline">{creator_html}</div>
+                </article>
+                """
+            )
+        weekly_topic_sections.append(
+            f"""
+            <div class="update-group">
+              <h3>{html.escape(topic["label"])}</h3>
+              <div class="update-list">{"".join(cards)}</div>
+            </div>
+            """
+        )
+    weekly_updates_html = "".join(weekly_topic_sections) or '<p class="empty-note">本周暂未检测到新条目。</p>'
     topic_cards = []
     for topic in topic_stats:
         topic_cards.append(
@@ -1412,6 +1465,74 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
       gap: 8px;
       flex-wrap: wrap;
     }}
+    .weekly-summary {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }}
+    .weekly-summary span {{
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: #eef4f8;
+      color: var(--blue);
+      font: 700 12px/1.2 ui-sans-serif, system-ui, sans-serif;
+    }}
+    .weekly-updates {{
+      display: grid;
+      gap: 16px;
+      margin-top: 18px;
+    }}
+    .update-group h3 {{
+      margin-bottom: 10px;
+      color: var(--accent);
+    }}
+    .update-list {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }}
+    .update-card {{
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      border-radius: 8px;
+      padding: 14px;
+      min-width: 0;
+    }}
+    .update-card h4 {{
+      margin: 8px 0;
+      font: 700 15px/1.28 ui-sans-serif, system-ui, sans-serif;
+      letter-spacing: 0;
+    }}
+    .update-card h4 a {{
+      text-decoration: none;
+    }}
+    .update-card p {{
+      font-size: 13px;
+    }}
+    .update-meta, .update-byline {{
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font: 12px/1.25 ui-sans-serif, system-ui, sans-serif;
+    }}
+    .update-meta span {{
+      border-radius: 999px;
+      background: #f4efe4;
+      padding: 3px 7px;
+    }}
+    .update-byline {{
+      margin-top: 10px;
+    }}
+    .empty-note {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-strong);
+      padding: 14px;
+    }}
     table {{
       width: 100%;
       border-collapse: collapse;
@@ -1537,6 +1658,7 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
       .wrap {{ padding: 18px; }}
       .steps, .manage-grid {{ grid-template-columns: 1fr; }}
       .weekly-panel {{ grid-template-columns: 1fr; }}
+      .update-list {{ grid-template-columns: 1fr; }}
       .section-head {{ display: block; }}
       .section-head p {{ margin-top: 8px; }}
       table, thead, tbody, tr, th, td {{ display: block; }}
@@ -1584,7 +1706,7 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
         <div class="primary-actions">
           <a class="button primary" href="feed.xml">打开总 RSS</a>
           <button class="button" data-copy="feed.xml">复制订阅地址</button>
-          <a class="button" href="weekly/latest.md">本周更新</a>
+          <a class="button" href="#weekly">本周更新</a>
           <a class="button" href="#topics">按方向订阅</a>
           <a class="button" href="#journals">查看期刊</a>
         </div>
@@ -1608,17 +1730,25 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at, wee
       <div class="metric"><span>待补摘要</span><strong>{weak_total}</strong></div>
     </div>
 
-    <section>
+    <section id="weekly">
       <div class="weekly-panel">
         <div>
-          <h2>本周新论文摘要合集</h2>
-          <p>自动从最新条目生成 Markdown，按研究方向分组。可以直接打开阅读，也可以作为公众号、微信群和朋友圈更新素材。</p>
+          <h2>本周更新</h2>
+          <p>自动汇总新近论文，按研究方向分组。可以直接在这里扫读，也可以打开 Markdown 周报作为公众号、微信群和朋友圈素材。</p>
+          <div class="weekly-summary">
+            <span>{html.escape(weekly_scope)}</span>
+            <span>{weekly_count} 条更新</span>
+            <span>{weekly_journal_count} 本期刊</span>
+          </div>
         </div>
         <div class="weekly-actions">
           <a class="button primary" href="weekly/latest.md">打开周报</a>
           <button class="button" data-copy="weekly/latest.md">复制周报地址</button>
           <a class="button" href="{html.escape(weekly_path)}">日期版</a>
         </div>
+      </div>
+      <div class="weekly-updates">
+        {weekly_updates_html}
       </div>
     </section>
 
