@@ -28,6 +28,7 @@ http://127.0.0.1:8765/translation-studies.xml
 - Metadata is cached in `work/metadata-cache.json` for 30 days.
 - Local generated feeds are cached in memory for 30 minutes.
 - Chinese translations are added with `deepseek-v4-flash` when `TRANSLATE_TO_ZH=1` and `DEEPSEEK_API_KEY` are set.
+- Static publishing validates the generated site before deployment. If any configured journal is missing or any source fails, the build stops instead of publishing a partial feed.
 
 ## Generate a Static Feed
 
@@ -36,6 +37,8 @@ python3 server.py --once public/feed.xml
 ```
 
 This writes `public/feed.xml`, `public/index.html`, and one XML file per journal.
+
+The static build also checks that every journal in `journals.json` produced a feed. A failed source, missing per-journal XML file, or journal-count mismatch will raise an error.
 
 To include Chinese translations locally:
 
@@ -91,3 +94,35 @@ https://xionglingsong.github.io/rss-translation-studies/feed.xml
 Taylor & Francis, John Benjamins, and JAT entries use Crossref on GitHub Pages because some publisher RSS endpoints may reject GitHub-hosted requests. SAGE and OJS feeds are enriched through DOI or article-page metadata when their RSS entries omit fields such as abstracts, DOIs, or pages. Some reviews or editorial material may not have a public abstract in any metadata source.
 
 To publish Chinese translations on GitHub Pages, add a `DEEPSEEK_API_KEY` repository secret. The workflow already enables `TRANSLATE_TO_ZH`.
+
+## Maintenance Checklist
+
+Use this checklist whenever adding or repairing a journal.
+
+1. Add or update the journal in `journals.json`.
+   - Include `slug`, `title`, `publisher`, `homepage`, and either `source_feed` or Crossref fields.
+   - Prefer a stable official RSS feed when it works on GitHub Actions.
+   - Use `source_type: "crossref"` when publisher RSS blocks GitHub-hosted requests or omits too much metadata.
+
+2. Verify source quality locally.
+   - Run `python3 server.py --once public/feed.xml`.
+   - Open `public/manifest.json` and confirm `journal_count` equals the number of entries in `journals.json`.
+   - Check `errors` is an empty list.
+   - Review `weak_abstract_count` and the per-journal `weak_abstracts` values.
+
+3. Check the public homepage.
+   - Open `public/index.html`.
+   - Confirm the journal list is complete.
+   - Confirm each row shows source type, current build status, item count, Chinese count, and abstract status.
+   - Test the combined RSS button and at least one per-journal RSS link.
+
+4. Update public documentation.
+   - Keep the "Included Journals" list in this README in sync with `journals.json`.
+   - Mention special source decisions, such as Crossref fallbacks or journals without official RSS.
+   - If the change affects users, add a short update note for WeChat, the website, or the project announcement.
+
+5. Publish safely.
+   - Commit the code and config changes together.
+   - Push to `main`.
+   - Check the `Publish RSS feed` GitHub Actions run.
+   - After deployment, open the live `manifest.json` and confirm the expected journal count.

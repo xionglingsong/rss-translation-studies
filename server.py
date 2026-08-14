@@ -159,6 +159,14 @@ def usable_abstract(value):
     return bool(value) and not is_truncated_abstract(value)
 
 
+def source_type_label(source_type):
+    labels = {
+        "crossref": "Crossref",
+        "rss": "官方 RSS",
+    }
+    return labels.get(source_type or "rss", source_type or "RSS")
+
+
 def extract_doi(*values):
     for value in values:
         match = re.search(r"10\.\d{4,9}/[^\s\"'<>]+", value or "", flags=re.I)
@@ -711,6 +719,8 @@ def generate_all_feeds():
     if TRANSLATE_TO_ZH and not DEEPSEEK_API_KEY:
         print("TRANSLATE_TO_ZH is enabled, but DEEPSEEK_API_KEY is not set. Skipping Chinese translations.")
     sources = load_journals()
+    generated_at = datetime.now(timezone.utc)
+    generated_at_iso = generated_at.isoformat()
     outputs = {}
     combined_items = []
     errors = []
@@ -719,6 +729,8 @@ def generate_all_feeds():
         try:
             feed, items = generate_source(source, cache)
             combined_items.extend(items)
+            weak_abstracts = sum(1 for item in items if weak_abstract(item))
+            source_type = source.get("source_type", "rss")
             stats.append(
                 {
                     "slug": source["slug"],
@@ -727,10 +739,15 @@ def generate_all_feeds():
                     "homepage": source.get("homepage") or feed["link"],
                     "feed": f"{source['slug']}.xml",
                     "source_feed": source.get("source_feed", ""),
-                    "source_type": source.get("source_type", "rss"),
+                    "source_type": source_type,
+                    "source_label": source_type_label(source_type),
+                    "status": "ok",
+                    "status_label": "本次成功",
+                    "last_success_at": generated_at_iso,
                     "items": len(items),
                     "translated": sum(1 for item in items if item.get("abstract_zh")),
-                    "weak_abstracts": sum(1 for item in items if weak_abstract(item)),
+                    "weak_abstracts": weak_abstracts,
+                    "abstract_quality": "complete" if weak_abstracts == 0 else "needs_review",
                 }
             )
             outputs[f"{source['slug']}.xml"] = build_rss(
@@ -751,8 +768,9 @@ def generate_all_feeds():
     outputs["manifest.json"] = json.dumps(
         {
             "title": "Translation Studies RSS",
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": generated_at_iso,
             "combined_feed": "feed.xml",
+            "expected_journal_count": len(sources),
             "journal_count": len(stats),
             "item_count": len(combined_items),
             "translated_count": sum(stat["translated"] for stat in stats),
@@ -763,7 +781,7 @@ def generate_all_feeds():
         ensure_ascii=False,
         indent=2,
     )
-    outputs["index.html"] = build_public_index(stats, errors, len(combined_items))
+    outputs["index.html"] = build_public_index(stats, errors, len(combined_items), generated_at)
     if errors:
         print("Skipped feeds:")
         for error in errors:
@@ -771,19 +789,41 @@ def generate_all_feeds():
     return outputs
 
 
+def validate_static_outputs(outputs, sources):
+    manifest = json.loads(outputs["manifest.json"])
+    expected_count = len(sources)
+    actual_count = manifest.get("journal_count", 0)
+    errors = manifest.get("errors") or []
+    missing_feeds = [
+        source["slug"]
+        for source in sources
+        if f"{source['slug']}.xml" not in outputs
+    ]
+    if errors or actual_count != expected_count or missing_feeds:
+        details = [
+            f"expected {expected_count} journals, generated {actual_count}",
+            f"errors: {len(errors)}",
+            f"missing feeds: {', '.join(missing_feeds) if missing_feeds else 'none'}",
+        ]
+        if errors:
+            details.extend(errors)
+        raise RuntimeError("Static feed validation failed: " + "; ".join(details))
+
+
 def weak_abstract(item):
     abstract = item.get("abstract") or item.get("fallback_description") or ""
     return not abstract or "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract)) or is_truncated_abstract(abstract)
 
 
-def build_public_index(stats, errors, item_count):
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+def build_public_index(stats, errors, item_count, generated_at):
+    generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
     weak_total = sum(stat["weak_abstracts"] for stat in stats)
     translated_total = sum(stat["translated"] for stat in stats)
     journal_rows = []
     for stat in stats:
         quality_class = "good" if stat["weak_abstracts"] == 0 else "watch"
         quality_label = "完整" if stat["weak_abstracts"] == 0 else f"{stat['weak_abstracts']} 条待补"
+        status_title = f"最近成功：{generated_label}"
         journal_rows.append(
             f"""
             <tr>
@@ -793,6 +833,10 @@ def build_public_index(stats, errors, item_count):
               </td>
               <td><span class="number">{stat["items"]}</span></td>
               <td><span class="number">{stat["translated"]}</span></td>
+              <td>
+                <span class="source-chip">{html.escape(stat["source_label"])}</span>
+                <span class="status-line" title="{html.escape(status_title)}">{html.escape(stat["status_label"])}</span>
+              </td>
               <td><span class="quality {quality_class}">{quality_label}</span></td>
               <td class="actions-cell">
                 <div class="actions">
@@ -867,6 +911,9 @@ def build_public_index(stats, errors, item_count):
       font-size: clamp(36px, 6vw, 76px);
       line-height: .96;
       letter-spacing: 0;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-all;
     }}
     h2 {{
       margin: 0 0 14px;
@@ -919,7 +966,10 @@ def build_public_index(stats, errors, item_count):
       padding-top: 18px;
       padding-bottom: 22px;
     }}
-    .hero-copy {{ max-width: 720px; }}
+    .hero-copy {{
+      max-width: 720px;
+      min-width: 0;
+    }}
     .hero-copy p {{
       max-width: 680px;
       margin-top: 18px;
@@ -965,6 +1015,7 @@ def build_public_index(stats, errors, item_count):
       box-shadow: var(--shadow);
       border-radius: 8px;
       padding: 18px;
+      min-width: 0;
     }}
     .subscribe-panel h2 {{
       font-size: 18px;
@@ -1085,14 +1136,15 @@ def build_public_index(stats, errors, item_count):
       table-layout: fixed;
       font-family: ui-sans-serif, system-ui, sans-serif;
     }}
-    th:nth-child(1), td:nth-child(1) {{ width: 53%; }}
+    th:nth-child(1), td:nth-child(1) {{ width: 45%; }}
     th:nth-child(2), td:nth-child(2),
     th:nth-child(3), td:nth-child(3) {{
-      width: 7%;
+      width: 6%;
       text-align: center;
     }}
     th:nth-child(4), td:nth-child(4) {{ width: 12%; }}
-    th:nth-child(5), td:nth-child(5) {{ width: 21%; }}
+    th:nth-child(5), td:nth-child(5) {{ width: 12%; }}
+    th:nth-child(6), td:nth-child(6) {{ width: 19%; }}
     th, td {{
       border-bottom: 1px solid var(--line);
       padding: 12px 8px;
@@ -1129,6 +1181,22 @@ def build_public_index(stats, errors, item_count):
     .quality.watch {{
       background: #fff0d2;
       color: #8c5b00;
+    }}
+    .source-chip {{
+      display: inline-flex;
+      width: fit-content;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: var(--ink);
+      background: var(--panel-strong);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .status-line {{
+      margin-top: 4px;
+      color: var(--accent);
+      font-size: 12px;
     }}
     tr:last-child td {{ border-bottom: 0; }}
     .actions-cell {{
@@ -1203,7 +1271,7 @@ def build_public_index(stats, errors, item_count):
     @media (max-width: 520px) {{
       .stats, .clients, .source-grid {{ grid-template-columns: 1fr; }}
       .feed-url {{ flex-direction: column; }}
-      h1 {{ font-size: 40px; }}
+      h1 {{ font-size: 34px; }}
     }}
   </style>
 </head>
@@ -1227,7 +1295,7 @@ def build_public_index(stats, errors, item_count):
           <code id="combined-url">https://xionglingsong.github.io/rss-translation-studies/feed.xml</code>
           <button class="button primary" data-copy="feed.xml">复制</button>
         </div>
-        <div class="mini-note">最近生成：{generated_at}。GitHub Actions 每 6 小时自动刷新。</div>
+        <div class="mini-note">最近生成：{generated_label}。GitHub Actions 每 6 小时自动刷新。</div>
       </div>
     </div>
   </header>
@@ -1328,6 +1396,7 @@ def build_public_index(stats, errors, item_count):
             <th>期刊</th>
             <th>条目</th>
             <th>中文</th>
+            <th>来源</th>
             <th>摘要状态</th>
             <th>操作</th>
           </tr>
@@ -1430,6 +1499,7 @@ def write_static_site(output_path):
     output_dir = os.path.dirname(os.path.abspath(output_path))
     os.makedirs(output_dir, exist_ok=True)
     outputs = generate_all_feeds()
+    validate_static_outputs(outputs, load_journals())
     for name, content in outputs.items():
         with open(os.path.join(output_dir, name), "w", encoding="utf-8") as file:
             file.write(content)
