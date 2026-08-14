@@ -13,7 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime, parsedate_to_datetime
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,6 +35,12 @@ METADATA_TTL_SECONDS = 60 * 60 * 24 * 30
 FEED_TTL_SECONDS = 60 * 30
 MAX_WORKERS = int(os.environ.get("RSS_MAX_WORKERS", "8"))
 MAX_ITEMS_PER_SOURCE = int(os.environ.get("RSS_MAX_ITEMS_PER_SOURCE", "8"))
+WEEKLY_DAYS = int(os.environ.get("RSS_WEEKLY_DAYS", "7"))
+WEEKLY_FALLBACK_ITEMS = int(os.environ.get("RSS_WEEKLY_FALLBACK_ITEMS", "20"))
+OBSIDIAN_WEEKLY_DIR = os.environ.get(
+    "RSS_OBSIDIAN_WEEKLY_DIR",
+    "/Users/lingsongxiong/Nutstore Files/Obsidian/claudesidian-0.13.1/01_Projects/译了么/公众号/RSS",
+)
 
 TOPICS = [
     {
@@ -756,6 +762,100 @@ def build_rss(title, link, description, items):
     return "\n".join(line for line in lines if line)
 
 
+def markdown_escape(value):
+    return (value or "").replace("\n", " ").strip()
+
+
+def markdown_summary(item):
+    abstract = item.get("abstract_zh") or item.get("abstract") or item.get("fallback_description") or ""
+    if weak_abstract(item):
+        return "公开元数据中暂未获取到完整摘要。"
+    return markdown_escape(abstract)
+
+
+def item_date_label(item):
+    return parse_date(item.get("date")).strftime("%Y-%m-%d")
+
+
+def weekly_items(combined_items, generated_at):
+    sorted_items = sorted(combined_items, key=lambda item: parse_date(item.get("date")), reverse=True)
+    cutoff = generated_at - timedelta(days=WEEKLY_DAYS)
+    recent_items = [item for item in sorted_items if parse_date(item.get("date")) >= cutoff]
+    if recent_items:
+        return recent_items, f"最近 {WEEKLY_DAYS} 天"
+    return sorted_items[:WEEKLY_FALLBACK_ITEMS], f"最近 {WEEKLY_FALLBACK_ITEMS} 条"
+
+
+def build_weekly_markdown(combined_items, topic_stats, generated_at):
+    selected_items, scope_label = weekly_items(combined_items, generated_at)
+    generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
+    date_slug = generated_at.strftime("%Y-%m-%d")
+    lines = [
+        f"# 翻译学新论文速递：{date_slug}",
+        "",
+        f"> 由 Translation Studies RSS 自动生成。范围：{scope_label}；生成时间：{generated_label}。",
+        "",
+        "订阅入口：https://xionglingsong.github.io/rss-translation-studies/",
+        "",
+        f"本期共收录 {len(selected_items)} 条新近条目，来自 {len({item.get('source_slug') for item in selected_items})} 本期刊。",
+        "",
+    ]
+    if not selected_items:
+        lines.extend(["本期暂未检测到新条目。", ""])
+        return "\n".join(lines).strip() + "\n"
+
+    used_ids = set()
+    for topic in topic_stats:
+        topic_items = [
+            item
+            for item in selected_items
+            if topic["slug"] in item.get("source_tags", []) and (item.get("doi") or item.get("link") or item.get("title")) not in used_ids
+        ]
+        if not topic_items:
+            continue
+        lines.extend([f"## {topic['label']}", ""])
+        for item in topic_items:
+            item_id = item.get("doi") or item.get("link") or item.get("title")
+            used_ids.add(item_id)
+            title = markdown_escape(item.get("title") or "Untitled")
+            lines.extend(
+                [
+                    f"### {title}",
+                    "",
+                    f"- 期刊：{markdown_escape(item.get('source_title') or item.get('journal'))}",
+                    f"- 日期：{item_date_label(item)}",
+                ]
+            )
+            if item.get("creator"):
+                lines.append(f"- 作者：{markdown_escape(item['creator'])}")
+            if item.get("doi"):
+                lines.append(f"- DOI：{markdown_escape(item['doi'])}")
+            if item.get("link"):
+                lines.append(f"- 原文链接：{markdown_escape(item['link'])}")
+            lines.extend(["", markdown_summary(item), ""])
+
+    uncategorized = [
+        item
+        for item in selected_items
+        if (item.get("doi") or item.get("link") or item.get("title")) not in used_ids
+    ]
+    if uncategorized:
+        lines.extend(["## 其他更新", ""])
+        for item in uncategorized:
+            lines.extend(
+                [
+                    f"### {markdown_escape(item.get('title') or 'Untitled')}",
+                    "",
+                    f"- 期刊：{markdown_escape(item.get('source_title') or item.get('journal'))}",
+                    f"- 日期：{item_date_label(item)}",
+                    "",
+                    markdown_summary(item),
+                    "",
+                ]
+            )
+    return "\n".join(lines).strip() + "\n"
+
+
 def generate_source(source, cache):
     feed = parse_source_feed(source)
     items_to_enrich = feed["items"][: source.get("max_items", MAX_ITEMS_PER_SOURCE)]
@@ -851,11 +951,20 @@ def generate_all_feeds():
                 "item_count": len(topic_items),
             }
         )
+    weekly_markdown = build_weekly_markdown(combined_items, topic_stats, generated_at)
+    weekly_date = generated_at.strftime("%Y-%m-%d")
+    weekly_path = f"weekly/{weekly_date}.md"
+    outputs[weekly_path] = weekly_markdown
+    outputs["weekly/latest.md"] = weekly_markdown
     outputs["manifest.json"] = json.dumps(
         {
             "title": "Translation Studies RSS",
             "generated_at": generated_at_iso,
             "combined_feed": "feed.xml",
+            "weekly": {
+                "latest": "weekly/latest.md",
+                "dated": weekly_path,
+            },
             "expected_journal_count": len(sources),
             "journal_count": len(stats),
             "item_count": len(combined_items),
@@ -868,7 +977,7 @@ def generate_all_feeds():
         ensure_ascii=False,
         indent=2,
     )
-    outputs["index.html"] = build_public_index(stats, topic_stats, errors, len(combined_items), generated_at)
+    outputs["index.html"] = build_public_index(stats, topic_stats, errors, len(combined_items), generated_at, weekly_path)
     if errors:
         print("Skipped feeds:")
         for error in errors:
@@ -891,12 +1000,14 @@ def validate_static_outputs(outputs, sources):
         for topic in TOPICS
         if topic_feed_name(topic["slug"]) not in outputs
     ]
-    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds:
+    missing_weekly = [name for name in ("weekly/latest.md", manifest.get("weekly", {}).get("dated", "")) if name not in outputs]
+    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_weekly:
         details = [
             f"expected {expected_count} journals, generated {actual_count}",
             f"errors: {len(errors)}",
             f"missing feeds: {', '.join(missing_feeds) if missing_feeds else 'none'}",
             f"missing topic feeds: {', '.join(missing_topic_feeds) if missing_topic_feeds else 'none'}",
+            f"missing weekly files: {', '.join(missing_weekly) if missing_weekly else 'none'}",
         ]
         if errors:
             details.extend(errors)
@@ -908,7 +1019,7 @@ def weak_abstract(item):
     return not abstract or "No abstract found" in abstract or bool(re.match(r"^Volume \d+", abstract)) or is_truncated_abstract(abstract)
 
 
-def build_public_index(stats, topic_stats, errors, item_count, generated_at):
+def build_public_index(stats, topic_stats, errors, item_count, generated_at, weekly_path):
     generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
     weak_total = sum(stat["weak_abstracts"] for stat in stats)
     translated_total = sum(stat["translated"] for stat in stats)
@@ -1290,6 +1401,17 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at):
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
     }}
+    .weekly-panel {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+    }}
+    .weekly-actions {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
     table {{
       width: 100%;
       border-collapse: collapse;
@@ -1414,6 +1536,7 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at):
     @media (max-width: 760px) {{
       .wrap {{ padding: 18px; }}
       .steps, .manage-grid {{ grid-template-columns: 1fr; }}
+      .weekly-panel {{ grid-template-columns: 1fr; }}
       .section-head {{ display: block; }}
       .section-head p {{ margin-top: 8px; }}
       table, thead, tbody, tr, th, td {{ display: block; }}
@@ -1461,6 +1584,7 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at):
         <div class="primary-actions">
           <a class="button primary" href="feed.xml">打开总 RSS</a>
           <button class="button" data-copy="feed.xml">复制订阅地址</button>
+          <a class="button" href="weekly/latest.md">本周更新</a>
           <a class="button" href="#topics">按方向订阅</a>
           <a class="button" href="#journals">查看期刊</a>
         </div>
@@ -1483,6 +1607,20 @@ def build_public_index(stats, topic_stats, errors, item_count, generated_at):
       <div class="metric"><span>中文摘要</span><strong>{translated_total}</strong></div>
       <div class="metric"><span>待补摘要</span><strong>{weak_total}</strong></div>
     </div>
+
+    <section>
+      <div class="weekly-panel">
+        <div>
+          <h2>本周新论文摘要合集</h2>
+          <p>自动从最新条目生成 Markdown，按研究方向分组。可以直接打开阅读，也可以作为公众号、微信群和朋友圈更新素材。</p>
+        </div>
+        <div class="weekly-actions">
+          <a class="button primary" href="weekly/latest.md">打开周报</a>
+          <button class="button" data-copy="weekly/latest.md">复制周报地址</button>
+          <a class="button" href="{html.escape(weekly_path)}">日期版</a>
+        </div>
+      </div>
+    </section>
 
     <section>
       <div class="section-head">
@@ -1664,7 +1802,7 @@ class FeedHandler(BaseHTTPRequestHandler):
             self.send_text(200, "ok\n", "text/plain")
             return
         name = parsed.path.strip("/") or "feed.xml"
-        if name.endswith(".xml") or name == "index.html":
+        if name.endswith(".xml") or name.endswith(".md") or name in ("index.html", "manifest.json"):
             try:
                 force = urllib.parse.parse_qs(parsed.query).get("refresh") == ["1"]
                 if force or not self.rendered or time.time() - self.rendered_at > FEED_TTL_SECONDS:
@@ -1674,7 +1812,14 @@ class FeedHandler(BaseHTTPRequestHandler):
                 if body is None:
                     self.send_text(404, "Not found\n", "text/plain")
                     return
-                content_type = "text/html" if name == "index.html" else "application/rss+xml"
+                if name == "index.html":
+                    content_type = "text/html"
+                elif name == "manifest.json":
+                    content_type = "application/json"
+                elif name.endswith(".md"):
+                    content_type = "text/markdown"
+                else:
+                    content_type = "application/rss+xml"
                 self.send_text(200, body, content_type)
             except Exception as error:
                 self.send_text(502, f"Feed proxy error: {error}\n", "text/plain")
@@ -1688,11 +1833,19 @@ def write_static_site(output_path):
     outputs = generate_all_feeds()
     validate_static_outputs(outputs, load_journals())
     for name, content in outputs.items():
-        with open(os.path.join(output_dir, name), "w", encoding="utf-8") as file:
+        destination = os.path.join(output_dir, name)
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        with open(destination, "w", encoding="utf-8") as file:
             file.write(content)
             file.write("\n")
     with open(os.path.join(output_dir, ".nojekyll"), "w", encoding="utf-8") as file:
         file.write("")
+    weekly = json.loads(outputs["manifest.json"]).get("weekly", {})
+    if os.path.isdir(OBSIDIAN_WEEKLY_DIR) and weekly.get("dated"):
+        obsidian_file = os.path.join(OBSIDIAN_WEEKLY_DIR, f"翻译学新论文速递-{os.path.basename(weekly['dated'])}")
+        with open(obsidian_file, "w", encoding="utf-8") as file:
+            file.write(outputs[weekly["dated"]])
+        print(f"Synced weekly digest to {obsidian_file}")
     print(f"Wrote {len(outputs)} files to {output_dir}")
 
 

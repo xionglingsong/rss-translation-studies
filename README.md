@@ -45,13 +45,23 @@ python3 server.py --once public/feed.xml
 
 This writes `public/feed.xml`, `public/index.html`, and one XML file per journal.
 
-The static build also checks that every journal in `journals.json` produced a feed. A failed source, missing per-journal XML file, missing topic feed, or journal-count mismatch will raise an error.
+The static build also writes `public/weekly/latest.md` and a dated weekly Markdown digest under `public/weekly/`.
+
+The static build checks that every journal in `journals.json` produced a feed. A failed source, missing per-journal XML file, missing topic feed, missing weekly digest, or journal-count mismatch will raise an error.
 
 To include Chinese translations locally:
 
 ```bash
 TRANSLATE_TO_ZH=1 DEEPSEEK_API_KEY=your_api_key python3 server.py --once public/feed.xml
 ```
+
+When run on this Mac, the dated weekly digest is also copied to the Obsidian publishing folder if it exists:
+
+```text
+/Users/lingsongxiong/Nutstore Files/Obsidian/claudesidian-0.13.1/01_Projects/译了么/公众号/RSS
+```
+
+Override the target with `RSS_OBSIDIAN_WEEKLY_DIR=/path/to/folder`.
 
 ## Host on GitHub Pages
 
@@ -111,6 +121,15 @@ The project also publishes topic-specific RSS feeds. These are generated from jo
 - 视听翻译: `topic-audiovisual-translation.xml`
 - 术语与专门用途翻译: `topic-terminology-specialized-translation.xml`
 
+## Weekly Digest
+
+The site publishes a Markdown digest that can be reused for newsletters, WeChat posts, group updates, or Obsidian drafts.
+
+- Latest digest: `weekly/latest.md`
+- Dated digest: `weekly/YYYY-MM-DD.md`
+
+The digest uses items from the most recent 7 days. If no items fall within that window, it falls back to the latest 20 items so the generated article is still useful.
+
 Taylor & Francis, John Benjamins, and JAT entries use Crossref on GitHub Pages because some publisher RSS endpoints may reject GitHub-hosted requests. SAGE and OJS feeds are enriched through DOI or article-page metadata when their RSS entries omit fields such as abstracts, DOIs, or pages. Some reviews or editorial material may not have a public abstract in any metadata source.
 
 To publish Chinese translations on GitHub Pages, add a `DEEPSEEK_API_KEY` repository secret. The workflow already enables `TRANSLATE_TO_ZH`.
@@ -131,6 +150,7 @@ Use this checklist whenever adding or repairing a journal.
    - Check `errors` is an empty list.
    - Review `weak_abstract_count` and the per-journal `weak_abstracts` values.
    - Review the `topics` section and confirm each expected topic feed has items.
+   - Open `public/weekly/latest.md` and confirm the weekly digest has sensible grouping and links.
 
 3. Check the public homepage.
    - Open `public/index.html`.
