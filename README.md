@@ -94,6 +94,7 @@ https://xionglingsong.github.io/rss-translation-studies/feed.xml
 - Target
 - Interpreting
 - Translation and Interpreting Studies
+- Translation & Interpreting
 - Translation Spaces
 - Babel
 - FORUM

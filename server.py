@@ -274,7 +274,6 @@ TYPE_KEYWORDS = {
     "book-review": (
         "book review",
         "book reviews",
-        "review of ",
         "reviews of ",
         "books received",
         "new books",
@@ -518,6 +517,11 @@ def classify_item_topics(item, fallback_tags):
 
 def classify_item_type(item):
     title = (item.get("title") or "").lower()
+    doi = (item.get("doi") or "").lower()
+    if re.search(r"\.r\d+$", doi):
+        return "book-review"
+    if title.startswith("review of "):
+        return "book-review"
     for keyword in TYPE_KEYWORDS["book-review"]:
         if keyword in title:
             return "book-review"

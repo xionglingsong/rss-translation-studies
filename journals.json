@@ -105,6 +105,16 @@
     "description": "Translation and Interpreting Studies."
   },
   {
+    "slug": "translation-interpreting",
+    "title": "Translation & Interpreting",
+    "publisher": "Western Sydney University",
+    "source_type": "crossref",
+    "issn": "1836-9324",
+    "homepage": "https://www.trans-int.org/index.php/transint",
+    "tags": ["interpreting", "general-translation-studies", "translator-education"],
+    "description": "Translation & Interpreting: The International Journal of Translation and Interpreting Research."
+  },
+  {
     "slug": "translation-spaces",
     "title": "Translation Spaces",
     "publisher": "John Benjamins",
