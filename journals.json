@@ -224,6 +224,15 @@
     "description": "Meta: Translators' Journal."
   },
   {
+    "slug": "monti",
+    "title": "MonTi",
+    "publisher": "Universitat Jaume I",
+    "homepage": "https://www.e-revistes.uji.es/index.php/monti/index",
+    "source_feed": "https://www.e-revistes.uji.es/index.php/monti/gateway/plugin/WebFeedGatewayPlugin/rss2",
+    "tags": ["general-translation-studies", "interpreting", "digital-ai-translation"],
+    "description": "MonTi Monografías de Traducción e Interpretación."
+  },
+  {
     "slug": "journal-audiovisual-translation",
     "title": "Journal of Audiovisual Translation",
     "publisher": "European Association for Studies in Screen Translation",

@@ -105,6 +105,7 @@ https://xionglingsong.github.io/rss-translation-studies/feed.xml
 - InContext
 - Terminology
 - Meta
+- MonTi
 - Journal of Audiovisual Translation
 - The Journal of Specialised Translation
 - Interpreting and Society
