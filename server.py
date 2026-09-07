@@ -536,6 +536,59 @@ def keyword_alert_matches(item, terms):
     return any(term.lower() in searchable for term in terms)
 
 
+RELATED_TERM_STOPWORDS = frozenset(
+    {
+        "about", "across", "analysis", "approach", "article", "between", "case", "cases", "context",
+        "discourse", "english", "evidence", "exploring", "from", "implications", "language", "languages",
+        "research", "results", "social", "studies", "study", "theory", "translation", "translations",
+        "translating", "translator", "translators", "using", "within", "with",
+    }
+)
+
+
+def related_terms(item):
+    text = " ".join([item.get("title", ""), item.get("abstract", ""), item.get("fallback_description", "")]).lower()
+    return {
+        term
+        for term in re.findall(r"[a-z][a-z-]{4,}", text)
+        if term not in RELATED_TERM_STOPWORDS
+    }
+
+
+def related_item_score(item, candidate, item_terms=None, candidate_terms=None):
+    item_terms = related_terms(item) if item_terms is None else item_terms
+    candidate_terms = related_terms(candidate) if candidate_terms is None else candidate_terms
+    shared_terms = item_terms & candidate_terms
+    shared_topics = set(item.get("source_tags", [])) & set(candidate.get("source_tags", []))
+    same_author = bool(item.get("creator") and item.get("creator").strip().lower() == candidate.get("creator", "").strip().lower())
+    same_source = item.get("source_slug") and item.get("source_slug") == candidate.get("source_slug")
+    score = min(len(shared_terms), 4) * 2 + len(shared_topics) * 2 + (5 if same_author else 0) + (1 if same_source else 0)
+    reasons = []
+    if same_author:
+        reasons.append("同一作者")
+    if shared_topics:
+        reasons.append("共同方向：" + "、".join(topic_labels(sorted(shared_topics))))
+    if shared_terms:
+        reasons.append("共同关键词：" + "、".join(sorted(shared_terms)[:3]))
+    return score, reasons
+
+
+def find_related_papers(items, limit=3):
+    related = {}
+    item_terms = [related_terms(item) for item in items]
+    for index, item in enumerate(items):
+        recommendations = []
+        for candidate_index, candidate in enumerate(items):
+            if index == candidate_index:
+                continue
+            score, reasons = related_item_score(item, candidate, item_terms[index], item_terms[candidate_index])
+            if score >= 3:
+                recommendations.append((score, parse_date(candidate.get("date")), candidate, reasons))
+        recommendations.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+        related[index] = [{"item": candidate, "reasons": reasons} for _, _, candidate, reasons in recommendations[:limit]]
+    return related
+
+
 def score_topic(text, keywords):
     score = 0
     for keyword in keywords:
@@ -1655,8 +1708,10 @@ def build_papers_page(combined_items, generated_at):
         f'<option value="{html.escape(item_type["slug"])}">{html.escape(item_type["label"])}</option>'
         for item_type in ARTICLE_TYPES
     )
+    sorted_items = sorted(combined_items, key=lambda item: parse_date(item.get("date")), reverse=True)
+    related_by_index = find_related_papers(sorted_items)
     cards = []
-    for item in sorted(combined_items, key=lambda item: parse_date(item.get("date")), reverse=True):
+    for index, item in enumerate(sorted_items):
         search_text = " ".join(
             [
                 item.get("title", ""),
@@ -1684,6 +1739,14 @@ def build_papers_page(combined_items, generated_at):
             f"URL: {item.get('link')}" if item.get("link") else "",
         ]
         reference_text = "\n".join(line for line in reference_lines if line)
+        related_papers = related_by_index[index]
+        related_html = ""
+        if related_papers:
+            related_items_html = "".join(
+                f'<li><a href="{html.escape(related["item"].get("link") or "#")}">{html.escape(related["item"].get("title") or "Untitled")}</a><span>{html.escape("；".join(related["reasons"]))}</span></li>'
+                for related in related_papers
+            )
+            related_html = f'<aside class="related-papers"><h3>关联阅读</h3><ul>{related_items_html}</ul></aside>'
         cards.append(
             f"""
             <article class="paper-card" data-paper data-search="{html.escape(search_text)}" data-topics="{html.escape(topics)}" data-type="{html.escape(item.get('item_type', 'article'))}" data-date="{int(parse_date(item.get('date')).timestamp())}" data-title="{html.escape((item.get('title') or '').lower())}">
@@ -1697,6 +1760,7 @@ def build_papers_page(combined_items, generated_at):
               <h2><a href="{html.escape(item.get('link') or '#')}">{html.escape(item.get("title") or "Untitled")}</a></h2>
               {creator_html}
               <p>{html.escape(truncate_text(markdown_summary(item), 360))}</p>
+              {related_html}
               <div class="paper-actions"><a href="{html.escape(item.get('link') or '#')}">打开原文</a><button type="button" data-copy-reference="{html.escape(reference_text, quote=True)}">复制引文信息</button></div>
             </article>
             """
@@ -1737,6 +1801,11 @@ def build_papers_page(combined_items, generated_at):
     .paper-card h2 a {{ text-decoration:none; }}
     .paper-card p {{ margin:0; color:#46545a; }}
     .byline {{ margin:0 0 10px !important; color:var(--muted) !important; font:13px/1.3 ui-sans-serif,system-ui,sans-serif; }}
+    .related-papers {{ margin-top:16px; border-left:3px solid #b7d7d2; padding-left:12px; }}
+    .related-papers h3 {{ margin:0 0 7px; color:var(--muted); font:700 12px/1.2 ui-sans-serif,system-ui,sans-serif; }}
+    .related-papers ul {{ display:grid; gap:6px; margin:0; padding:0; list-style:none; }}
+    .related-papers li {{ display:grid; gap:2px; font:13px/1.35 ui-sans-serif,system-ui,sans-serif; }}
+    .related-papers li span {{ color:var(--muted); font-size:12px; }}
     .paper-actions {{ display:flex; gap:12px; flex-wrap:wrap; margin-top:14px; font:700 13px/1.2 ui-sans-serif,system-ui,sans-serif; }}
     .paper-actions a, .paper-actions button {{ border:0; padding:0; background:none; color:var(--accent); font:inherit; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }}
     [data-paper][hidden] {{ display:none; }}
