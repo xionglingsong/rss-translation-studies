@@ -1593,7 +1593,7 @@ def build_papers_page(combined_items, generated_at):
         doi_html = f'<span>DOI: {html.escape(doi)}</span>' if doi else ""
         cards.append(
             f"""
-            <article class="paper-card" data-paper data-search="{html.escape(search_text)}" data-topics="{html.escape(topics)}" data-type="{html.escape(item.get('item_type', 'article'))}">
+            <article class="paper-card" data-paper data-search="{html.escape(search_text)}" data-topics="{html.escape(topics)}" data-type="{html.escape(item.get('item_type', 'article'))}" data-date="{int(parse_date(item.get('date')).timestamp())}" data-title="{html.escape((item.get('title') or '').lower())}">
               <div class="meta">
                 <span>{html.escape(item_date_label(item))}</span>
                 <span>{html.escape(item.get("source_title") or item.get("journal") or "")}</span>
@@ -1630,8 +1630,9 @@ def build_papers_page(combined_items, generated_at):
     .button {{ min-height:40px; border:1px solid var(--line); border-radius:6px; background:#fff; padding:9px 12px; color:var(--ink); text-decoration:none; font:14px/1.2 ui-sans-serif,system-ui,sans-serif; cursor:pointer; }}
     .button.primary {{ border-color:var(--accent); background:var(--accent); color:#fff; }}
     main {{ display:grid; gap:18px; padding-top:24px !important; }}
-    .filters {{ display:grid; grid-template-columns:minmax(230px,1.8fr) repeat(2,minmax(150px,1fr)) auto; gap:10px; align-items:end; padding:14px; border:1px solid var(--line); border-radius:8px; background:var(--panel); font-family:ui-sans-serif,system-ui,sans-serif; }}
+    .filters {{ display:grid; grid-template-columns:minmax(220px,1.7fr) repeat(4,minmax(128px,1fr)) auto; gap:10px; align-items:end; padding:14px; border:1px solid var(--line); border-radius:8px; background:var(--panel); font-family:ui-sans-serif,system-ui,sans-serif; }}
     .field {{ display:grid; gap:5px; }}
+    .filter-actions {{ display:flex; gap:8px; flex-wrap:wrap; }}
     label {{ color:var(--muted); font-size:12px; font-weight:700; }}
     input, select {{ min-height:40px; width:100%; border:1px solid var(--line); border-radius:6px; padding:8px 10px; color:var(--ink); background:#fff; font:14px/1.2 ui-sans-serif,system-ui,sans-serif; }}
     input:focus-visible, select:focus-visible, .button:focus-visible, a:focus-visible {{ outline:3px solid rgba(8,127,115,.45); outline-offset:2px; }}
@@ -1658,7 +1659,9 @@ def build_papers_page(combined_items, generated_at):
       <div class="field"><label for="paper-search">检索论文</label><input id="paper-search" type="search" autocomplete="off" placeholder="标题、作者、期刊、DOI 或摘要"></div>
       <div class="field"><label for="paper-topic">研究方向</label><select id="paper-topic"><option value="">全部方向</option>{topic_options}</select></div>
       <div class="field"><label for="paper-type">文章类型</label><select id="paper-type"><option value="">全部类型</option>{type_options}</select></div>
-      <button class="button" type="reset">清除筛选</button>
+      <div class="field"><label for="paper-age">发表时间</label><select id="paper-age"><option value="">不限时间</option><option value="30">近 30 天</option><option value="90">近 90 天</option><option value="365">近 1 年</option></select></div>
+      <div class="field"><label for="paper-sort">排序方式</label><select id="paper-sort"><option value="newest">最新发表</option><option value="oldest">最早发表</option><option value="title">标题 A–Z</option></select></div>
+      <div class="filter-actions"><button class="button" type="reset">清除筛选</button><button class="button" type="button" id="copy-paper-link">复制筛选链接</button></div>
     </form>
     <p class="result" id="paper-result" role="status">显示全部 {len(combined_items)} 条论文。</p>
     <div class="paper-list">{"".join(cards)}</div>
@@ -1668,18 +1671,65 @@ def build_papers_page(combined_items, generated_at):
     const search = document.getElementById("paper-search");
     const topic = document.getElementById("paper-topic");
     const type = document.getElementById("paper-type");
+    const age = document.getElementById("paper-age");
+    const sort = document.getElementById("paper-sort");
+    const copyLink = document.getElementById("copy-paper-link");
     const result = document.getElementById("paper-result");
+    const paperList = document.querySelector(".paper-list");
     const papers = Array.from(document.querySelectorAll("[data-paper]"));
+    const setFromParams = () => {{
+      const params = new URLSearchParams(window.location.search);
+      search.value = params.get("q") || "";
+      topic.value = params.get("topic") || "";
+      type.value = params.get("type") || "";
+      age.value = params.get("age") || "";
+      sort.value = params.get("sort") || "newest";
+    }};
+    const updateUrl = () => {{
+      const params = new URLSearchParams();
+      if (search.value.trim()) params.set("q", search.value.trim());
+      if (topic.value) params.set("topic", topic.value);
+      if (type.value) params.set("type", type.value);
+      if (age.value) params.set("age", age.value);
+      if (sort.value !== "newest") params.set("sort", sort.value);
+      const query = params.toString();
+      window.history.replaceState(null, "", query ? `${{window.location.pathname}}?${{query}}` : window.location.pathname);
+    }};
     const applyFilters = () => {{
       const query = search.value.trim().toLowerCase();
+      const days = Number(age.value || 0);
+      const cutoff = days ? Date.now() / 1000 - days * 86400 : 0;
       let visible = 0;
       papers.forEach((paper) => {{
-        const matches = (!query || paper.dataset.search.includes(query)) && (!topic.value || paper.dataset.topics.split(" ").includes(topic.value)) && (!type.value || paper.dataset.type === type.value);
+        const matches = (!query || paper.dataset.search.includes(query)) && (!topic.value || paper.dataset.topics.split(" ").includes(topic.value)) && (!type.value || paper.dataset.type === type.value) && (!cutoff || Number(paper.dataset.date) >= cutoff);
         paper.hidden = !matches;
         if (matches) visible += 1;
       }});
+      papers.sort((left, right) => {{
+        if (sort.value === "title") return left.dataset.title.localeCompare(right.dataset.title);
+        const direction = sort.value === "oldest" ? 1 : -1;
+        return direction * (Number(left.dataset.date) - Number(right.dataset.date));
+      }}).forEach((paper) => paperList.appendChild(paper));
+      updateUrl();
       result.textContent = visible ? `显示 ${{visible}} / ${{papers.length}} 条论文。` : "没有匹配的论文。请调整或清除筛选条件。";
     }};
+    copyLink.addEventListener("click", async () => {{
+      const label = copyLink.textContent;
+      try {{
+        await navigator.clipboard.writeText(window.location.href);
+      }} catch (error) {{
+        const helper = document.createElement("textarea");
+        helper.value = window.location.href;
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand("copy");
+        helper.remove();
+      }}
+      copyLink.textContent = "已复制";
+      setTimeout(() => {{ copyLink.textContent = label; }}, 1400);
+    }});
+    setFromParams();
+    applyFilters();
     form.addEventListener("submit", (event) => event.preventDefault());
     form.addEventListener("input", applyFilters);
     form.addEventListener("change", applyFilters);

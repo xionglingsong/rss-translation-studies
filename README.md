@@ -43,7 +43,7 @@ http://127.0.0.1:8765/topic-digital-ai-translation.xml
 python3 server.py --once public/feed.xml
 ```
 
-This writes `public/feed.xml`, `public/index.html`, `public/papers.html`, and one XML file per journal. The paper index supports client-side keyword, topic, and article-type filtering across all currently collected items.
+This writes `public/feed.xml`, `public/index.html`, `public/papers.html`, and one XML file per journal. The paper index supports client-side keyword, topic, article-type, publication-window filtering, sorting, and shareable filter links across all currently collected items.
 
 The static build also writes a rendered weekly digest at `public/weekly/latest.html`, plus Markdown drafts at `public/weekly/latest.md` and `public/weekly/YYYY-MM-DD.md`.
 
