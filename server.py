@@ -1907,15 +1907,33 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
             </article>
             """
         )
+    topic_filter_options = "".join(
+        f'<option value="{html.escape(topic["slug"])}">{html.escape(topic["label"])}</option>'
+        for topic in TOPICS
+    )
+    source_filter_options = "".join(
+        f'<option value="{html.escape(source_type)}">{html.escape(source_label)}</option>'
+        for source_type, source_label in sorted({stat["source_type"]: stat["source_label"] for stat in stats}.items())
+    )
     journal_rows = []
     for stat in stats:
         quality_class = "good" if stat["weak_abstracts"] == 0 else "watch"
         quality_label = "完整" if stat["weak_abstracts"] == 0 else f"{stat['weak_abstracts']} 条待补"
         status_title = stat.get("status_detail") or f"最近成功：{generated_label}"
         tags_html = "".join(f'<span class="tag-chip">{html.escape(label)}</span>' for label in stat.get("article_tag_labels", []))
+        filter_text = " ".join(
+            [
+                stat["title"],
+                stat["publisher"],
+                stat["source_label"],
+                stat["status_label"],
+                *stat.get("tag_labels", []),
+                *stat.get("article_tag_labels", []),
+            ]
+        ).lower()
         journal_rows.append(
             f"""
-            <tr>
+            <tr data-journal-row data-search="{html.escape(filter_text)}" data-topics="{html.escape(' '.join(stat.get('tags', [])))}" data-source="{html.escape(stat['source_type'])}" data-status="{html.escape(stat['status'])}">
               <td data-label="期刊">
                 <strong>{html.escape(stat["title"])}</strong>
                 <span>{html.escape(stat["publisher"])}</span>
@@ -2421,6 +2439,49 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
       background: var(--panel-strong);
       padding: 14px;
     }}
+    .journal-filters {{
+      display: grid;
+      grid-template-columns: minmax(220px, 1.55fr) repeat(3, minmax(140px, 1fr)) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 14px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-strong);
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }}
+    .filter-field {{
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }}
+    .filter-field label {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .filter-field input, .filter-field select {{
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      padding: 8px 10px;
+      font: 14px/1.2 ui-sans-serif, system-ui, sans-serif;
+    }}
+    .filter-field input::placeholder {{ color: #7a8589; }}
+    .journal-filter-status {{
+      margin: 0 0 12px;
+      color: var(--muted);
+      font: 13px/1.3 ui-sans-serif, system-ui, sans-serif;
+    }}
+    .button:focus-visible, .icon-button:focus-visible, .filter-field input:focus-visible, .filter-field select:focus-visible {{
+      outline: 3px solid rgba(8, 127, 115, .45);
+      outline-offset: 2px;
+    }}
+    [data-journal-row][hidden] {{ display: none !important; }}
     table {{
       width: 100%;
       border-collapse: collapse;
@@ -2559,6 +2620,8 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
       }}
       .steps, .manage-grid {{ grid-template-columns: 1fr; }}
       .weekly-panel {{ grid-template-columns: 1fr; }}
+      .journal-filters {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+      .journal-filters .button {{ grid-column: 1 / -1; }}
       .update-list {{ grid-template-columns: 1fr; }}
       .section-head {{ display: block; }}
       .section-head p {{ margin-top: 8px; }}
@@ -2591,7 +2654,7 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
       }}
     }}
     @media (max-width: 520px) {{
-      .stats, .clients, .topic-grid, .source-grid {{ grid-template-columns: 1fr; }}
+      .stats, .clients, .topic-grid, .source-grid, .journal-filters {{ grid-template-columns: 1fr; }}
       .feed-url {{ flex-direction: column; }}
       h1 {{ font-size: 34px; }}
     }}
@@ -2764,8 +2827,38 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
     <section id="journals">
       <div class="section-head">
         <h2>期刊列表</h2>
-        <p>可订阅总 RSS，也可只订阅单本期刊。单刊按钮会复制对应 XML 地址。</p>
+        <p>可订阅总 RSS，也可只订阅单本期刊。用筛选器快速找到符合研究方向或来源偏好的订阅。</p>
       </div>
+      <form class="journal-filters" id="journal-filters" role="search">
+        <div class="filter-field">
+          <label for="journal-search">检索期刊</label>
+          <input id="journal-search" name="journal-search" type="search" autocomplete="off" placeholder="期刊、出版社或研究方向">
+        </div>
+        <div class="filter-field">
+          <label for="topic-filter">研究方向</label>
+          <select id="topic-filter" name="topic-filter">
+            <option value="">全部方向</option>
+            {topic_filter_options}
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="source-filter">数据来源</label>
+          <select id="source-filter" name="source-filter">
+            <option value="">全部来源</option>
+            {source_filter_options}
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="status-filter">更新状态</label>
+          <select id="status-filter" name="status-filter">
+            <option value="">全部状态</option>
+            <option value="ok">本次成功</option>
+            <option value="stale">沿用最近版本</option>
+          </select>
+        </div>
+        <button class="button" type="reset">清除筛选</button>
+      </form>
+      <p class="journal-filter-status" id="journal-filter-status" role="status">显示全部 {len(stats)} 本期刊。</p>
       <table>
         <thead>
           <tr>
@@ -2826,6 +2919,42 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
         setTimeout(() => toast.classList.remove("show"), 1400);
       }});
     }});
+
+    const journalFilters = document.getElementById("journal-filters");
+    const journalSearch = document.getElementById("journal-search");
+    const topicFilter = document.getElementById("topic-filter");
+    const sourceFilter = document.getElementById("source-filter");
+    const statusFilter = document.getElementById("status-filter");
+    const journalFilterStatus = document.getElementById("journal-filter-status");
+    const journalRows = Array.from(document.querySelectorAll("[data-journal-row]"));
+
+    const applyJournalFilters = () => {{
+      const search = journalSearch.value.trim().toLowerCase();
+      const topic = topicFilter.value;
+      const source = sourceFilter.value;
+      const status = statusFilter.value;
+      let visible = 0;
+
+      journalRows.forEach((row) => {{
+        const matches = (
+          (!search || row.dataset.search.includes(search)) &&
+          (!topic || row.dataset.topics.split(" ").includes(topic)) &&
+          (!source || row.dataset.source === source) &&
+          (!status || row.dataset.status === status)
+        );
+        row.hidden = !matches;
+        if (matches) visible += 1;
+      }});
+
+      journalFilterStatus.textContent = visible
+        ? `显示 ${{visible}} / ${{journalRows.length}} 本期刊。`
+        : "没有匹配的期刊。请调整或清除筛选条件。";
+    }};
+
+    journalFilters.addEventListener("submit", (event) => event.preventDefault());
+    journalFilters.addEventListener("input", applyJournalFilters);
+    journalFilters.addEventListener("change", applyJournalFilters);
+    journalFilters.addEventListener("reset", () => window.requestAnimationFrame(applyJournalFilters));
   </script>
 </body>
 </html>
