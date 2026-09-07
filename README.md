@@ -43,9 +43,11 @@ http://127.0.0.1:8765/topic-digital-ai-translation.xml
 python3 server.py --once public/feed.xml
 ```
 
-This writes `public/feed.xml`, `public/index.html`, and one XML file per journal.
+This writes `public/feed.xml`, `public/index.html`, `public/papers.html`, and one XML file per journal. The paper index supports client-side keyword, topic, and article-type filtering across all currently collected items.
 
 The static build also writes a rendered weekly digest at `public/weekly/latest.html`, plus Markdown drafts at `public/weekly/latest.md` and `public/weekly/YYYY-MM-DD.md`.
+
+The generator records each article's first observed appearance in its existing cache. The first run establishes a baseline; later runs surface newly observed papers on the homepage.
 
 The static build checks that every journal in `journals.json` produced a feed. A failed source, missing per-journal XML file, missing topic feed, missing weekly page, missing weekly Markdown draft, or journal-count mismatch will raise an error.
 

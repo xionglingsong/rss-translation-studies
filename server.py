@@ -1264,6 +1264,25 @@ def item_identity(item):
     return item.get("doi") or item.get("link") or item.get("title")
 
 
+def track_new_items(cache, items, generated_at):
+    seen_items = cache.setdefault("_seen_items", {})
+    tracking_active = bool(seen_items)
+    new_items = []
+    for item in items:
+        identity = item_identity(item)
+        if not identity:
+            continue
+        key = hashlib.sha256(f"{item.get('source_slug', '')}\0{identity}".encode("utf-8")).hexdigest()
+        entry = seen_items.get(key)
+        if entry is None:
+            entry = {"first_seen_at": generated_at.isoformat()}
+            seen_items[key] = entry
+            if tracking_active:
+                new_items.append(item)
+        item["first_seen_at"] = entry["first_seen_at"]
+    return new_items, tracking_active
+
+
 def item_primary_topic(item):
     for tag in item.get("source_tags", []):
         if tag in TOPIC_BY_SLUG:
@@ -1542,6 +1561,135 @@ def build_weekly_html(combined_items, topic_stats, generated_at, markdown_path):
 """
 
 
+def build_papers_page(combined_items, generated_at):
+    generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
+    topic_options = "".join(
+        f'<option value="{html.escape(topic["slug"])}">{html.escape(topic["label"])}</option>'
+        for topic in TOPICS
+    )
+    type_options = "".join(
+        f'<option value="{html.escape(item_type["slug"])}">{html.escape(item_type["label"])}</option>'
+        for item_type in ARTICLE_TYPES
+    )
+    cards = []
+    for item in sorted(combined_items, key=lambda item: parse_date(item.get("date")), reverse=True):
+        search_text = " ".join(
+            [
+                item.get("title", ""),
+                item.get("creator", ""),
+                item.get("source_title", ""),
+                item.get("doi", ""),
+                item.get("abstract", ""),
+                item.get("fallback_description", ""),
+                *item.get("topic_labels", []),
+                item.get("item_type_label", ""),
+            ]
+        ).lower()
+        topics = " ".join(item.get("source_tags", []))
+        topic_html = "".join(f"<span>{html.escape(label)}</span>" for label in item.get("topic_labels", []))
+        creator = html.escape(item.get("creator") or "")
+        creator_html = f'<p class="byline">{creator}</p>' if creator else ""
+        doi = item.get("doi") or ""
+        doi_html = f'<span>DOI: {html.escape(doi)}</span>' if doi else ""
+        cards.append(
+            f"""
+            <article class="paper-card" data-paper data-search="{html.escape(search_text)}" data-topics="{html.escape(topics)}" data-type="{html.escape(item.get('item_type', 'article'))}">
+              <div class="meta">
+                <span>{html.escape(item_date_label(item))}</span>
+                <span>{html.escape(item.get("source_title") or item.get("journal") or "")}</span>
+                <span>{html.escape(item.get("item_type_label") or article_type_label(item.get("item_type")))}</span>
+                {topic_html}
+                {doi_html}
+              </div>
+              <h2><a href="{html.escape(item.get('link') or '#')}">{html.escape(item.get("title") or "Untitled")}</a></h2>
+              {creator_html}
+              <p>{html.escape(truncate_text(markdown_summary(item), 360))}</p>
+            </article>
+            """
+        )
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>论文索引 · Translation Studies RSS</title>
+  <meta name="description" content="可按关键词、研究方向和文章类型检索的翻译学新近论文索引。">
+  <style>
+    :root {{ --ink:#243036; --muted:#68757b; --line:#d9d2c2; --panel:#fffdf7; --bg:#f4efe4; --accent:#087f73; --blue:#315f8f; }}
+    * {{ box-sizing:border-box; }}
+    body {{ margin:0; color:var(--ink); background:var(--bg); font:16px/1.58 "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", serif; }}
+    a {{ color:inherit; }}
+    .wrap {{ max-width:1080px; margin:0 auto; padding:28px; }}
+    header {{ border-bottom:1px solid var(--line); background:var(--panel); }}
+    h1 {{ margin:0; font-size:clamp(36px,6vw,68px); line-height:1; }}
+    .lede {{ max-width:680px; margin:16px 0 0; color:var(--muted); font-size:18px; }}
+    .meta, .summary {{ display:flex; gap:6px; flex-wrap:wrap; }}
+    .summary {{ margin-top:18px; }}
+    .meta span, .summary span {{ display:inline-flex; width:fit-content; border-radius:999px; padding:4px 8px; background:#eef4f8; color:var(--blue); font:700 12px/1.2 ui-sans-serif,system-ui,sans-serif; }}
+    .actions {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:20px; }}
+    .button {{ min-height:40px; border:1px solid var(--line); border-radius:6px; background:#fff; padding:9px 12px; color:var(--ink); text-decoration:none; font:14px/1.2 ui-sans-serif,system-ui,sans-serif; cursor:pointer; }}
+    .button.primary {{ border-color:var(--accent); background:var(--accent); color:#fff; }}
+    main {{ display:grid; gap:18px; padding-top:24px !important; }}
+    .filters {{ display:grid; grid-template-columns:minmax(230px,1.8fr) repeat(2,minmax(150px,1fr)) auto; gap:10px; align-items:end; padding:14px; border:1px solid var(--line); border-radius:8px; background:var(--panel); font-family:ui-sans-serif,system-ui,sans-serif; }}
+    .field {{ display:grid; gap:5px; }}
+    label {{ color:var(--muted); font-size:12px; font-weight:700; }}
+    input, select {{ min-height:40px; width:100%; border:1px solid var(--line); border-radius:6px; padding:8px 10px; color:var(--ink); background:#fff; font:14px/1.2 ui-sans-serif,system-ui,sans-serif; }}
+    input:focus-visible, select:focus-visible, .button:focus-visible, a:focus-visible {{ outline:3px solid rgba(8,127,115,.45); outline-offset:2px; }}
+    .result {{ margin:0; color:var(--muted); font:13px/1.3 ui-sans-serif,system-ui,sans-serif; }}
+    .paper-list {{ display:grid; gap:12px; }}
+    .paper-card {{ border:1px solid var(--line); border-radius:8px; padding:18px; background:#fff; }}
+    .paper-card h2 {{ margin:11px 0 8px; font:700 20px/1.28 ui-sans-serif,system-ui,sans-serif; }}
+    .paper-card h2 a {{ text-decoration:none; }}
+    .paper-card p {{ margin:0; color:#46545a; }}
+    .byline {{ margin:0 0 10px !important; color:var(--muted) !important; font:13px/1.3 ui-sans-serif,system-ui,sans-serif; }}
+    [data-paper][hidden] {{ display:none; }}
+    @media (max-width:720px) {{ .wrap {{ padding:18px; }} .filters {{ grid-template-columns:1fr; }} }}
+  </style>
+</head>
+<body>
+  <header><div class="wrap">
+    <h1>论文索引</h1>
+    <p class="lede">搜索当前收录的论文标题、作者、期刊、DOI 和摘要；再按研究方向或文章类型缩小范围。</p>
+    <div class="summary"><span>{len(combined_items)} 条论文</span><span>生成时间：{generated_label}</span></div>
+    <div class="actions"><a class="button primary" href="index.html">返回首页</a><a class="button" href="feed.xml">订阅总 RSS</a></div>
+  </div></header>
+  <main class="wrap">
+    <form class="filters" id="paper-filters" role="search">
+      <div class="field"><label for="paper-search">检索论文</label><input id="paper-search" type="search" autocomplete="off" placeholder="标题、作者、期刊、DOI 或摘要"></div>
+      <div class="field"><label for="paper-topic">研究方向</label><select id="paper-topic"><option value="">全部方向</option>{topic_options}</select></div>
+      <div class="field"><label for="paper-type">文章类型</label><select id="paper-type"><option value="">全部类型</option>{type_options}</select></div>
+      <button class="button" type="reset">清除筛选</button>
+    </form>
+    <p class="result" id="paper-result" role="status">显示全部 {len(combined_items)} 条论文。</p>
+    <div class="paper-list">{"".join(cards)}</div>
+  </main>
+  <script>
+    const form = document.getElementById("paper-filters");
+    const search = document.getElementById("paper-search");
+    const topic = document.getElementById("paper-topic");
+    const type = document.getElementById("paper-type");
+    const result = document.getElementById("paper-result");
+    const papers = Array.from(document.querySelectorAll("[data-paper]"));
+    const applyFilters = () => {{
+      const query = search.value.trim().toLowerCase();
+      let visible = 0;
+      papers.forEach((paper) => {{
+        const matches = (!query || paper.dataset.search.includes(query)) && (!topic.value || paper.dataset.topics.split(" ").includes(topic.value)) && (!type.value || paper.dataset.type === type.value);
+        paper.hidden = !matches;
+        if (matches) visible += 1;
+      }});
+      result.textContent = visible ? `显示 ${{visible}} / ${{papers.length}} 条论文。` : "没有匹配的论文。请调整或清除筛选条件。";
+    }};
+    form.addEventListener("submit", (event) => event.preventDefault());
+    form.addEventListener("input", applyFilters);
+    form.addEventListener("change", applyFilters);
+    form.addEventListener("reset", () => window.requestAnimationFrame(applyFilters));
+  </script>
+</body>
+</html>
+"""
+
+
 def generate_source(source, cache):
     source_snapshots = cache.setdefault("_source_snapshots", {})
     try:
@@ -1643,6 +1791,7 @@ def generate_all_feeds():
             )
         except Exception as error:
             errors.append(f"{source['slug']}: {error}")
+    new_items, update_tracking_active = track_new_items(cache, combined_items, generated_at)
     save_json(CACHE_PATH, cache)
     outputs["feed.xml"] = build_rss(
         "Translation Studies Journals with Abstracts",
@@ -1700,6 +1849,7 @@ def generate_all_feeds():
     outputs["weekly/latest.md"] = weekly_markdown
     outputs[weekly_html_path] = weekly_html
     outputs["weekly/latest.html"] = weekly_html
+    outputs["papers.html"] = build_papers_page(combined_items, generated_at)
     outputs["manifest.json"] = json.dumps(
         {
             "title": "Translation Studies RSS",
@@ -1714,6 +1864,9 @@ def generate_all_feeds():
             "expected_journal_count": len(sources),
             "journal_count": len(stats),
             "item_count": len(combined_items),
+            "papers": {"index": "papers.html", "count": len(combined_items)},
+            "new_item_tracking_active": update_tracking_active,
+            "new_items_count": len(new_items),
             "translated_count": sum(stat["translated"] for stat in stats),
             "weak_abstract_count": sum(stat["weak_abstracts"] for stat in stats),
             "topics": topic_stats,
@@ -1734,6 +1887,8 @@ def generate_all_feeds():
         weekly_html_path,
         weekly_md_path,
         combined_items,
+        new_items,
+        update_tracking_active,
     )
     if errors:
         print("Skipped feeds:")
@@ -1770,7 +1925,8 @@ def validate_static_outputs(outputs, sources):
         weekly_manifest.get("dated_markdown", ""),
     ]
     missing_weekly = [name for name in expected_weekly_files if name and name not in outputs]
-    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_type_feeds or missing_weekly:
+    missing_pages = [name for name in (manifest.get("papers") or {}).values() if isinstance(name, str) and name not in outputs]
+    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_type_feeds or missing_weekly or missing_pages:
         details = [
             f"expected {expected_count} journals, generated {actual_count}",
             f"errors: {len(errors)}",
@@ -1778,6 +1934,7 @@ def validate_static_outputs(outputs, sources):
             f"missing topic feeds: {', '.join(missing_topic_feeds) if missing_topic_feeds else 'none'}",
             f"missing type feeds: {', '.join(missing_type_feeds) if missing_type_feeds else 'none'}",
             f"missing weekly files: {', '.join(missing_weekly) if missing_weekly else 'none'}",
+            f"missing index pages: {', '.join(missing_pages) if missing_pages else 'none'}",
         ]
         if errors:
             details.extend(errors)
@@ -1795,7 +1952,7 @@ def weak_abstract(item):
     )
 
 
-def build_public_index(stats, topic_stats, type_stats, errors, item_count, generated_at, weekly_path, weekly_md_path, combined_items):
+def build_public_index(stats, topic_stats, type_stats, errors, item_count, generated_at, weekly_path, weekly_md_path, combined_items, new_items, update_tracking_active):
     generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
     weak_total = sum(stat["weak_abstracts"] for stat in stats)
     translated_total = sum(stat["translated"] for stat in stats)
@@ -1822,6 +1979,26 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
             """
         )
     ticker_html = "".join(ticker_cards + ticker_cards)
+    if new_items:
+        discovery_cards = []
+        for item in sorted(new_items, key=lambda item: parse_date(item.get("date")), reverse=True):
+            discovery_cards.append(
+                f"""
+                <article class="update-card">
+                  <div class="update-meta"><span>{html.escape(item_date_label(item))}</span><span>{html.escape(item.get("source_title") or item.get("journal") or "")}</span></div>
+                  <h4><a href="{html.escape(item.get('link') or '#')}">{html.escape(item.get("title") or "Untitled")}</a></h4>
+                  <p>{html.escape(truncate_text(markdown_summary(item), 180))}</p>
+                </article>
+                """
+            )
+        discovery_html = '<div class="update-list">' + "".join(discovery_cards) + "</div>"
+        discovery_note = f"本次刷新识别到 {len(new_items)} 条首次收录论文。"
+    elif update_tracking_active:
+        discovery_html = '<p class="empty-note">本次刷新没有识别到首次收录的论文。</p>'
+        discovery_note = "新条目追踪已开启，会在后续刷新时标出首次收录的论文。"
+    else:
+        discovery_html = '<p class="empty-note">首次运行正在建立追踪基线；下一次刷新开始识别新收录论文。</p>'
+        discovery_note = "追踪基线已建立，不会将已有论文误报为新增。"
     weekly_topic_sections = []
     used_weekly_ids = set()
     for topic in topic_stats:
@@ -2670,6 +2847,7 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
         <div class="primary-actions">
           <a class="button primary" href="feed.xml">打开总 RSS</a>
           <button class="button" data-copy="feed.xml">复制订阅地址</button>
+          <a class="button" href="papers.html">论文索引</a>
           <a class="button" href="#weekly">本周更新</a>
           <a class="button" href="#topics">按方向订阅</a>
           <a class="button" href="#journals">查看期刊</a>
@@ -2698,10 +2876,18 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
   <main class="wrap">
     <div class="stats">
       <div class="metric"><span>收录期刊</span><strong>{len(stats)}</strong></div>
-      <div class="metric"><span>最新条目</span><strong>{item_count}</strong></div>
+      <div class="metric"><span>当前论文</span><strong>{item_count}</strong></div>
       <div class="metric"><span>中文摘要</span><strong>{translated_total}</strong></div>
       <div class="metric"><span>待补摘要</span><strong>{weak_total}</strong></div>
     </div>
+
+    <section id="discoveries">
+      <div class="section-head">
+        <div><h2>本轮新发现</h2><p>{html.escape(discovery_note)}</p></div>
+        <div class="weekly-actions"><a class="button primary" href="papers.html">检索全部论文</a><a class="button" href="papers.html#paper-search">打开论文搜索</a></div>
+      </div>
+      {discovery_html}
+    </section>
 
     <section id="weekly">
       <div class="weekly-panel">
