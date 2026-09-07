@@ -1100,10 +1100,7 @@ def parse_atom(root, source):
     }
 
 
-def parse_source_feed(source):
-    if source.get("source_type") == "crossref":
-        return parse_crossref_source(source)
-    xml_text = fetch_text(source["source_feed"], accept="application/rss+xml, application/atom+xml, application/xml, text/xml")
+def parse_feed_xml(xml_text, source):
     root = ET.fromstring(xml_text.lstrip("\ufeff"))
     root_name = local_name(root.tag)
     if root_name == "RDF":
@@ -1113,6 +1110,13 @@ def parse_source_feed(source):
     if root_name == "feed":
         return parse_atom(root, source)
     raise ValueError(f"Unsupported feed format for {source['slug']}: {root.tag}")
+
+
+def parse_source_feed(source):
+    if source.get("source_type") == "crossref":
+        return parse_crossref_source(source)
+    xml_text = fetch_text(source["source_feed"], accept="application/rss+xml, application/atom+xml, application/xml, text/xml")
+    return parse_feed_xml(xml_text, source)
 
 
 def parse_crossref_source(source):
@@ -1539,7 +1543,29 @@ def build_weekly_html(combined_items, topic_stats, generated_at, markdown_path):
 
 
 def generate_source(source, cache):
-    feed = parse_source_feed(source)
+    source_snapshots = cache.setdefault("_source_snapshots", {})
+    try:
+        feed = parse_source_feed(source)
+        source_snapshots[source["slug"]] = {"feed": feed, "fetched_at": time.time()}
+    except Exception as source_error:
+        snapshot = source_snapshots.get(source["slug"], {}).get("feed")
+        if snapshot:
+            feed = snapshot
+            feed["fallback_reason"] = f"沿用缓存：{source_error}"
+        else:
+            published_url = f"https://xionglingsong.github.io/rss-translation-studies/{source['slug']}.xml"
+            try:
+                published_xml = fetch_text(
+                    published_url,
+                    accept="application/rss+xml, application/atom+xml, application/xml, text/xml",
+                    timeout=10,
+                    attempts=1,
+                )
+                feed = parse_feed_xml(published_xml, source)
+                feed["fallback_reason"] = f"沿用已发布版本：{source_error}"
+                source_snapshots[source["slug"]] = {"feed": feed, "fetched_at": time.time()}
+            except Exception as fallback_error:
+                raise RuntimeError(f"{source_error}; published-feed fallback failed: {fallback_error}") from source_error
     items_to_enrich = feed["items"][: source.get("max_items", MAX_ITEMS_PER_SOURCE)]
     if source.get("enrich_from_article_page"):
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -1584,6 +1610,7 @@ def generate_all_feeds():
                     if tag not in article_topic_slugs:
                         article_topic_slugs.append(tag)
             source_type = source.get("source_type", "rss")
+            fallback_reason = feed.get("fallback_reason", "")
             stats.append(
                 {
                     "slug": source["slug"],
@@ -1598,9 +1625,10 @@ def generate_all_feeds():
                     "tag_labels": topic_labels(tags),
                     "article_tags": article_topic_slugs,
                     "article_tag_labels": topic_labels(article_topic_slugs),
-                    "status": "ok",
-                    "status_label": "本次成功",
-                    "last_success_at": generated_at_iso,
+                    "status": "stale" if fallback_reason else "ok",
+                    "status_label": "沿用最近版本" if fallback_reason else "本次成功",
+                    "status_detail": fallback_reason,
+                    "last_success_at": generated_at_iso if not fallback_reason else "",
                     "items": len(items),
                     "translated": sum(1 for item in items if item.get("abstract_zh")),
                     "weak_abstracts": weak_abstracts,
@@ -1883,7 +1911,7 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
     for stat in stats:
         quality_class = "good" if stat["weak_abstracts"] == 0 else "watch"
         quality_label = "完整" if stat["weak_abstracts"] == 0 else f"{stat['weak_abstracts']} 条待补"
-        status_title = f"最近成功：{generated_label}"
+        status_title = stat.get("status_detail") or f"最近成功：{generated_label}"
         tags_html = "".join(f'<span class="tag-chip">{html.escape(label)}</span>' for label in stat.get("article_tag_labels", []))
         journal_rows.append(
             f"""
