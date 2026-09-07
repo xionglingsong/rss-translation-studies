@@ -107,6 +107,33 @@ ARTICLE_TYPES = [
 ]
 ARTICLE_TYPE_BY_SLUG = {item_type["slug"]: item_type for item_type in ARTICLE_TYPES}
 
+KEYWORD_ALERTS = [
+    {
+        "slug": "machine-translation-ai",
+        "label": "机器翻译与 AI",
+        "description": "机器翻译、神经网络、大语言模型与 AI 辅助翻译。",
+        "terms": ("machine translation", "neural translation", "large language model", "generative ai", "ai-assisted", "translation technology", "机器翻译", "大语言模型", "人工智能"),
+    },
+    {
+        "slug": "interpreting",
+        "label": "口译",
+        "description": "会议、社区、司法、医疗与手语口译。",
+        "terms": ("interpreting", "interpreter", "conference interpreting", "community interpreting", "court interpreting", "medical interpreting", "sign language", "口译", "同声传译", "交替传译"),
+    },
+    {
+        "slug": "audiovisual-translation",
+        "label": "视听翻译",
+        "description": "字幕、配音、无障碍传播和多模态翻译。",
+        "terms": ("audiovisual translation", "subtitling", "dubbing", "audio description", "captioning", "screen translation", "视听翻译", "字幕", "配音"),
+    },
+    {
+        "slug": "localization",
+        "label": "本地化",
+        "description": "软件、游戏、产品与国际化本地化研究。",
+        "terms": ("localization", "localisation", "internationalization", "internationalisation", "game localization", "software localization", "本地化", "国际化"),
+    },
+]
+
 TOPIC_KEYWORDS = {
     "interpreting": (
         "interpreting",
@@ -470,6 +497,14 @@ def type_feed_name(slug):
     return f"type-{slug}.xml"
 
 
+def keyword_alert_feed_name(slug):
+    return f"alert-{slug}.xml"
+
+
+def new_topic_feed_name(slug):
+    return f"new-topic-{slug}.xml"
+
+
 def topic_labels(tags):
     return [TOPIC_BY_SLUG[tag]["label"] for tag in tags if tag in TOPIC_BY_SLUG]
 
@@ -485,6 +520,19 @@ def normalized_item_text(item):
         "" if weak_abstract(item) else item.get("fallback_description", ""),
     ]
     return " ".join(values).lower()
+
+
+def keyword_alert_matches(item, terms):
+    searchable = " ".join(
+        [
+            normalized_item_text(item),
+            item.get("creator", ""),
+            item.get("source_title", ""),
+            item.get("journal", ""),
+            item.get("doi", ""),
+        ]
+    ).lower()
+    return any(term.lower() in searchable for term in terms)
 
 
 def score_topic(text, keywords):
@@ -1759,7 +1807,7 @@ def build_papers_page(combined_items, generated_at):
 """
 
 
-def build_subscriptions_opml(stats, topic_stats, type_stats, generated_at):
+def build_subscriptions_opml(stats, topic_stats, type_stats, new_feed_stats, keyword_alert_stats, generated_at):
     base_url = "https://xionglingsong.github.io/rss-translation-studies/"
 
     def feed_outline(label, filename, description=""):
@@ -1779,9 +1827,21 @@ def build_subscriptions_opml(stats, topic_stats, type_stats, generated_at):
         feed_outline(stat["title"], stat["feed"], f"{stat['source_label']} · {', '.join(stat['tag_labels'])}")
         for stat in sorted(stats, key=lambda stat: stat["title"].lower())
     ]
+    new_item_outlines = [
+        feed_outline("全部首次收录论文", new_feed_stats["feed"], "每次刷新首次识别到的论文。")
+    ] + [
+        feed_outline(topic["label"], topic["feed"], f"首次收录的{topic['label']}论文。")
+        for topic in new_feed_stats["topics"]
+    ]
+    keyword_outlines = [
+        feed_outline(alert["label"], alert["feed"], alert["description"])
+        for alert in keyword_alert_stats
+    ]
     body = "".join(
         [
             feed_outline("全部翻译学期刊更新", "feed.xml", "所有收录期刊的最新文章"),
+            group_outline("首次收录论文", new_item_outlines),
+            group_outline("关键词提醒", keyword_outlines),
             group_outline("按研究方向订阅", topic_outlines),
             group_outline("按文章类型订阅", type_outlines),
             group_outline("按期刊订阅", journal_outlines),
@@ -1944,6 +2004,24 @@ def generate_all_feeds():
                 "item_count": len(topic_items),
             }
         )
+    new_feed_stats = {"feed": "new.xml", "count": len(new_items), "tracking_active": update_tracking_active, "topics": []}
+    outputs[new_feed_stats["feed"]] = build_rss(
+        "Newly Discovered Translation Studies Articles",
+        "https://xionglingsong.github.io/rss-translation-studies/new.xml",
+        "Articles first discovered during the most recent successful refresh.",
+        new_items,
+    )
+    for topic in TOPICS:
+        topic_new_items = [item for item in new_items if topic["slug"] in item.get("source_tags", [])]
+        feed_name = new_topic_feed_name(topic["slug"])
+        outputs[feed_name] = build_rss(
+            f"Newly Discovered {topic['label']} Articles",
+            f"https://xionglingsong.github.io/rss-translation-studies/{feed_name}",
+            f"{topic['label']} articles first discovered during the most recent successful refresh.",
+            topic_new_items,
+        )
+        new_feed_stats["topics"].append({"slug": topic["slug"], "label": topic["label"], "feed": feed_name, "item_count": len(topic_new_items)})
+
     type_stats = []
     for item_type in ARTICLE_TYPES:
         type_items = [item for item in combined_items if item.get("item_type") == item_type["slug"]]
@@ -1964,7 +2042,19 @@ def generate_all_feeds():
                 "item_count": len(type_items),
             }
         )
-    outputs["subscriptions.opml"] = build_subscriptions_opml(stats, topic_stats, type_stats, generated_at)
+    keyword_alert_stats = []
+    for alert in KEYWORD_ALERTS:
+        alert_items = [item for item in combined_items if keyword_alert_matches(item, alert["terms"])]
+        feed_name = keyword_alert_feed_name(alert["slug"])
+        outputs[feed_name] = build_rss(
+            f"{alert['label']} Keyword Alert - Translation Studies",
+            f"https://xionglingsong.github.io/rss-translation-studies/{feed_name}",
+            alert["description"],
+            alert_items,
+        )
+        keyword_alert_stats.append({"slug": alert["slug"], "label": alert["label"], "description": alert["description"], "feed": feed_name, "item_count": len(alert_items)})
+
+    outputs["subscriptions.opml"] = build_subscriptions_opml(stats, topic_stats, type_stats, new_feed_stats, keyword_alert_stats, generated_at)
     weekly_markdown = build_weekly_markdown(combined_items, topic_stats, generated_at)
     weekly_date = generated_at.strftime("%Y-%m-%d")
     weekly_md_path = f"weekly/{weekly_date}.md"
@@ -1993,6 +2083,8 @@ def generate_all_feeds():
             "papers": {"index": "papers.html", "count": len(combined_items)},
             "new_item_tracking_active": update_tracking_active,
             "new_items_count": len(new_items),
+            "new_items": new_feed_stats,
+            "keyword_alerts": keyword_alert_stats,
             "translated_count": sum(stat["translated"] for stat in stats),
             "weak_abstract_count": sum(stat["weak_abstracts"] for stat in stats),
             "topics": topic_stats,
@@ -2015,6 +2107,8 @@ def generate_all_feeds():
         combined_items,
         new_items,
         update_tracking_active,
+        new_feed_stats,
+        keyword_alert_stats,
     )
     if errors:
         print("Skipped feeds:")
@@ -2054,7 +2148,11 @@ def validate_static_outputs(outputs, sources):
     missing_pages = [name for name in (manifest.get("papers") or {}).values() if isinstance(name, str) and name not in outputs]
     subscriptions_opml = manifest.get("subscriptions_opml", "")
     missing_subscriptions = [subscriptions_opml] if subscriptions_opml and subscriptions_opml not in outputs else []
-    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_type_feeds or missing_weekly or missing_pages or missing_subscriptions:
+    new_items_manifest = manifest.get("new_items") or {}
+    new_item_feeds = [new_items_manifest.get("feed", "")] + [topic.get("feed", "") for topic in new_items_manifest.get("topics", [])]
+    missing_new_item_feeds = [feed for feed in new_item_feeds if feed and feed not in outputs]
+    missing_keyword_feeds = [alert.get("feed", "") for alert in manifest.get("keyword_alerts", []) if alert.get("feed") not in outputs]
+    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_type_feeds or missing_weekly or missing_pages or missing_subscriptions or missing_new_item_feeds or missing_keyword_feeds:
         details = [
             f"expected {expected_count} journals, generated {actual_count}",
             f"errors: {len(errors)}",
@@ -2064,6 +2162,8 @@ def validate_static_outputs(outputs, sources):
             f"missing weekly files: {', '.join(missing_weekly) if missing_weekly else 'none'}",
             f"missing index pages: {', '.join(missing_pages) if missing_pages else 'none'}",
             f"missing subscription exports: {', '.join(missing_subscriptions) if missing_subscriptions else 'none'}",
+            f"missing new-item feeds: {', '.join(missing_new_item_feeds) if missing_new_item_feeds else 'none'}",
+            f"missing keyword-alert feeds: {', '.join(missing_keyword_feeds) if missing_keyword_feeds else 'none'}",
         ]
         if errors:
             details.extend(errors)
@@ -2081,7 +2181,7 @@ def weak_abstract(item):
     )
 
 
-def build_public_index(stats, topic_stats, type_stats, errors, item_count, generated_at, weekly_path, weekly_md_path, combined_items, new_items, update_tracking_active):
+def build_public_index(stats, topic_stats, type_stats, errors, item_count, generated_at, weekly_path, weekly_md_path, combined_items, new_items, update_tracking_active, new_feed_stats, keyword_alert_stats):
     generated_label = generated_at.strftime("%Y-%m-%d %H:%M UTC")
     weak_total = sum(stat["weak_abstracts"] for stat in stats)
     translated_total = sum(stat["translated"] for stat in stats)
@@ -2128,6 +2228,37 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
     else:
         discovery_html = '<p class="empty-note">首次运行正在建立追踪基线；下一次刷新开始识别新收录论文。</p>'
         discovery_note = "追踪基线已建立，不会将已有论文误报为新增。"
+    new_feed_note = "追踪基线已建立；后续每次刷新会更新该订阅。" if update_tracking_active else "当前正在建立追踪基线；下一次刷新开始会推送首次收录论文。"
+    new_feed_cards = [
+        f'''
+        <article class="topic-card">
+          <div><h3>全部新发现</h3><p>{html.escape(new_feed_note)}</p></div>
+          <div class="topic-meta"><span>{new_feed_stats["count"]} 条本轮新增</span></div>
+          <div class="topic-actions"><a class="icon-button" href="{html.escape(new_feed_stats["feed"])}">RSS</a><button class="icon-button" data-copy="{html.escape(new_feed_stats["feed"])}">Copy</button></div>
+        </article>
+        '''
+    ]
+    for topic in new_feed_stats["topics"]:
+        new_feed_cards.append(
+            f'''
+            <article class="topic-card">
+              <div><h3>{html.escape(topic["label"])}</h3><p>仅推送首次收录的{html.escape(topic["label"])}论文。</p></div>
+              <div class="topic-meta"><span>{topic["item_count"]} 条本轮新增</span></div>
+              <div class="topic-actions"><a class="icon-button" href="{html.escape(topic["feed"])}">RSS</a><button class="icon-button" data-copy="{html.escape(topic["feed"])}">Copy</button></div>
+            </article>
+            '''
+        )
+    keyword_alert_cards = []
+    for alert in keyword_alert_stats:
+        keyword_alert_cards.append(
+            f'''
+            <article class="topic-card">
+              <div><h3>{html.escape(alert["label"])}</h3><p>{html.escape(alert["description"])}</p></div>
+              <div class="topic-meta"><span>{alert["item_count"]} 条匹配论文</span></div>
+              <div class="topic-actions"><a class="icon-button" href="{html.escape(alert["feed"])}">RSS</a><button class="icon-button" data-copy="{html.escape(alert["feed"])}">Copy</button></div>
+            </article>
+            '''
+        )
     weekly_topic_sections = []
     used_weekly_ids = set()
     for topic in topic_stats:
@@ -2983,6 +3114,7 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
           <button class="button" data-copy="feed.xml">复制订阅地址</button>
           <a class="button" href="subscriptions.opml">下载 OPML 订阅包</a>
           <a class="button" href="papers.html">论文索引</a>
+          <a class="button" href="#alerts">关键词提醒</a>
           <a class="button" href="#weekly">本周更新</a>
           <a class="button" href="#topics">按方向订阅</a>
           <a class="button" href="#journals">查看期刊</a>
@@ -3022,6 +3154,20 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
         <div class="weekly-actions"><a class="button primary" href="papers.html">检索全部论文</a><a class="button" href="papers.html#paper-search">打开论文搜索</a></div>
       </div>
       {discovery_html}
+    </section>
+
+    <section id="new-feeds">
+      <div class="section-head">
+        <div><h2>只订阅新发现</h2><p>这组 Feed 只保留每次刷新时首次收录的论文，适合不想在阅读器里反复看到旧条目的读者。</p></div>
+      </div>
+      <div class="topic-grid">{"".join(new_feed_cards)}</div>
+    </section>
+
+    <section id="alerts">
+      <div class="section-head">
+        <div><h2>关键词提醒</h2><p>预设关键词会匹配论文标题、摘要、作者、期刊与 DOI。订阅后，只会收到匹配该主题的论文。</p></div>
+      </div>
+      <div class="topic-grid">{"".join(keyword_alert_cards)}</div>
     </section>
 
     <section id="weekly">
