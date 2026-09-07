@@ -1850,6 +1850,7 @@ def generate_all_feeds():
     combined_items = []
     errors = []
     stats = []
+    source_health = cache.setdefault("_source_health", {})
     for source in sources:
         try:
             feed, items = generate_source(source, cache)
@@ -1865,6 +1866,22 @@ def generate_all_feeds():
                         article_topic_slugs.append(tag)
             source_type = source.get("source_type", "rss")
             fallback_reason = feed.get("fallback_reason", "")
+            previous_health = source_health.get(source["slug"], {})
+            if fallback_reason:
+                health = {
+                    **previous_health,
+                    "last_checked_at": generated_at_iso,
+                    "status": "stale",
+                    "status_detail": fallback_reason,
+                }
+            else:
+                health = {
+                    "last_success_at": generated_at_iso,
+                    "last_checked_at": generated_at_iso,
+                    "status": "ok",
+                    "status_detail": "",
+                }
+            source_health[source["slug"]] = health
             stats.append(
                 {
                     "slug": source["slug"],
@@ -1879,10 +1896,11 @@ def generate_all_feeds():
                     "tag_labels": topic_labels(tags),
                     "article_tags": article_topic_slugs,
                     "article_tag_labels": topic_labels(article_topic_slugs),
-                    "status": "stale" if fallback_reason else "ok",
+                    "status": health["status"],
                     "status_label": "沿用最近版本" if fallback_reason else "本次成功",
-                    "status_detail": fallback_reason,
-                    "last_success_at": generated_at_iso if not fallback_reason else "",
+                    "status_detail": health["status_detail"],
+                    "last_success_at": health.get("last_success_at", ""),
+                    "last_checked_at": health["last_checked_at"],
                     "items": len(items),
                     "translated": sum(1 for item in items if item.get("abstract_zh")),
                     "weak_abstracts": weak_abstracts,
@@ -2207,7 +2225,12 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
     for stat in stats:
         quality_class = "good" if stat["weak_abstracts"] == 0 else "watch"
         quality_label = "完整" if stat["weak_abstracts"] == 0 else f"{stat['weak_abstracts']} 条待补"
-        status_title = stat.get("status_detail") or f"最近成功：{generated_label}"
+        last_success_at = stat.get("last_success_at", "")
+        last_success_label = ""
+        if last_success_at:
+            last_success_label = datetime.fromisoformat(last_success_at).strftime("%Y-%m-%d %H:%M UTC")
+        status_title = stat.get("status_detail") or f"最近成功：{last_success_label or generated_label}"
+        status_text = stat["status_label"] + (f" · 最近成功 {last_success_label}" if last_success_label else "")
         tags_html = "".join(f'<span class="tag-chip">{html.escape(label)}</span>' for label in stat.get("article_tag_labels", []))
         filter_text = " ".join(
             [
@@ -2231,7 +2254,7 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
               <td data-label="中文"><span class="number">{stat["translated"]}</span></td>
               <td data-label="来源">
                 <span class="source-chip">{html.escape(stat["source_label"])}</span>
-                <span class="status-line" title="{html.escape(status_title)}">{html.escape(stat["status_label"])}</span>
+                <span class="status-line" title="{html.escape(status_title)}">{html.escape(status_text)}</span>
               </td>
               <td data-label="摘要状态"><span class="quality {quality_class}">{quality_label}</span></td>
               <td class="actions-cell" data-label="操作">
