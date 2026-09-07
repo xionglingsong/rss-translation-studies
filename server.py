@@ -1591,6 +1591,15 @@ def build_papers_page(combined_items, generated_at):
         creator_html = f'<p class="byline">{creator}</p>' if creator else ""
         doi = item.get("doi") or ""
         doi_html = f'<span>DOI: {html.escape(doi)}</span>' if doi else ""
+        reference_lines = [
+            f"Title: {item.get('title') or 'Untitled'}",
+            f"Authors: {item.get('creator')}" if item.get("creator") else "",
+            f"Journal: {item.get('source_title') or item.get('journal')}" if item.get("source_title") or item.get("journal") else "",
+            f"Published: {item_date_label(item)}",
+            f"DOI: {doi}" if doi else "",
+            f"URL: {item.get('link')}" if item.get("link") else "",
+        ]
+        reference_text = "\n".join(line for line in reference_lines if line)
         cards.append(
             f"""
             <article class="paper-card" data-paper data-search="{html.escape(search_text)}" data-topics="{html.escape(topics)}" data-type="{html.escape(item.get('item_type', 'article'))}" data-date="{int(parse_date(item.get('date')).timestamp())}" data-title="{html.escape((item.get('title') or '').lower())}">
@@ -1604,6 +1613,7 @@ def build_papers_page(combined_items, generated_at):
               <h2><a href="{html.escape(item.get('link') or '#')}">{html.escape(item.get("title") or "Untitled")}</a></h2>
               {creator_html}
               <p>{html.escape(truncate_text(markdown_summary(item), 360))}</p>
+              <div class="paper-actions"><a href="{html.escape(item.get('link') or '#')}">打开原文</a><button type="button" data-copy-reference="{html.escape(reference_text, quote=True)}">复制引文信息</button></div>
             </article>
             """
         )
@@ -1643,6 +1653,8 @@ def build_papers_page(combined_items, generated_at):
     .paper-card h2 a {{ text-decoration:none; }}
     .paper-card p {{ margin:0; color:#46545a; }}
     .byline {{ margin:0 0 10px !important; color:var(--muted) !important; font:13px/1.3 ui-sans-serif,system-ui,sans-serif; }}
+    .paper-actions {{ display:flex; gap:12px; flex-wrap:wrap; margin-top:14px; font:700 13px/1.2 ui-sans-serif,system-ui,sans-serif; }}
+    .paper-actions a, .paper-actions button {{ border:0; padding:0; background:none; color:var(--accent); font:inherit; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }}
     [data-paper][hidden] {{ display:none; }}
     @media (max-width:720px) {{ .wrap {{ padding:18px; }} .filters {{ grid-template-columns:1fr; }} }}
   </style>
@@ -1713,20 +1725,27 @@ def build_papers_page(combined_items, generated_at):
       updateUrl();
       result.textContent = visible ? `显示 ${{visible}} / ${{papers.length}} 条论文。` : "没有匹配的论文。请调整或清除筛选条件。";
     }};
-    copyLink.addEventListener("click", async () => {{
-      const label = copyLink.textContent;
+    const copyText = async (text) => {{
       try {{
-        await navigator.clipboard.writeText(window.location.href);
+        await navigator.clipboard.writeText(text);
       }} catch (error) {{
         const helper = document.createElement("textarea");
-        helper.value = window.location.href;
+        helper.value = text;
         document.body.appendChild(helper);
         helper.select();
         document.execCommand("copy");
         helper.remove();
       }}
-      copyLink.textContent = "已复制";
-      setTimeout(() => {{ copyLink.textContent = label; }}, 1400);
+    }};
+    const confirmCopy = async (button, text) => {{
+      const label = button.textContent;
+      await copyText(text);
+      button.textContent = "已复制";
+      setTimeout(() => {{ button.textContent = label; }}, 1400);
+    }};
+    copyLink.addEventListener("click", () => confirmCopy(copyLink, window.location.href));
+    document.querySelectorAll("[data-copy-reference]").forEach((button) => {{
+      button.addEventListener("click", () => confirmCopy(button, button.dataset.copyReference));
     }});
     setFromParams();
     applyFilters();
