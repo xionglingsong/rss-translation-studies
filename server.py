@@ -1740,6 +1740,43 @@ def build_papers_page(combined_items, generated_at):
 """
 
 
+def build_subscriptions_opml(stats, topic_stats, type_stats, generated_at):
+    base_url = "https://xionglingsong.github.io/rss-translation-studies/"
+
+    def feed_outline(label, filename, description=""):
+        return (
+            f'<outline text="{html.escape(label, quote=True)}" title="{html.escape(label, quote=True)}" '
+            f'type="rss" xmlUrl="{html.escape(base_url + filename, quote=True)}" '
+            f'htmlUrl="{html.escape(base_url, quote=True)}" '
+            f'description="{html.escape(description, quote=True)}" />'
+        )
+
+    def group_outline(label, outlines):
+        return f'<outline text="{html.escape(label, quote=True)}" title="{html.escape(label, quote=True)}">' + "".join(outlines) + "</outline>"
+
+    topic_outlines = [feed_outline(topic["label"], topic["feed"], topic["description"]) for topic in topic_stats]
+    type_outlines = [feed_outline(item_type["label"], item_type["feed"], item_type["description"]) for item_type in type_stats]
+    journal_outlines = [
+        feed_outline(stat["title"], stat["feed"], f"{stat['source_label']} · {', '.join(stat['tag_labels'])}")
+        for stat in sorted(stats, key=lambda stat: stat["title"].lower())
+    ]
+    body = "".join(
+        [
+            feed_outline("全部翻译学期刊更新", "feed.xml", "所有收录期刊的最新文章"),
+            group_outline("按研究方向订阅", topic_outlines),
+            group_outline("按文章类型订阅", type_outlines),
+            group_outline("按期刊订阅", journal_outlines),
+        ]
+    )
+    created = generated_at.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head><title>Translation Studies RSS subscriptions</title><dateCreated>{created}</dateCreated></head>
+  <body>{body}</body>
+</opml>
+'''
+
+
 def generate_source(source, cache):
     source_snapshots = cache.setdefault("_source_snapshots", {})
     try:
@@ -1890,6 +1927,7 @@ def generate_all_feeds():
                 "item_count": len(type_items),
             }
         )
+    outputs["subscriptions.opml"] = build_subscriptions_opml(stats, topic_stats, type_stats, generated_at)
     weekly_markdown = build_weekly_markdown(combined_items, topic_stats, generated_at)
     weekly_date = generated_at.strftime("%Y-%m-%d")
     weekly_md_path = f"weekly/{weekly_date}.md"
@@ -1905,6 +1943,7 @@ def generate_all_feeds():
             "title": "Translation Studies RSS",
             "generated_at": generated_at_iso,
             "combined_feed": "feed.xml",
+            "subscriptions_opml": "subscriptions.opml",
             "weekly": {
                 "latest": "weekly/latest.html",
                 "latest_markdown": "weekly/latest.md",
@@ -1976,7 +2015,9 @@ def validate_static_outputs(outputs, sources):
     ]
     missing_weekly = [name for name in expected_weekly_files if name and name not in outputs]
     missing_pages = [name for name in (manifest.get("papers") or {}).values() if isinstance(name, str) and name not in outputs]
-    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_type_feeds or missing_weekly or missing_pages:
+    subscriptions_opml = manifest.get("subscriptions_opml", "")
+    missing_subscriptions = [subscriptions_opml] if subscriptions_opml and subscriptions_opml not in outputs else []
+    if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_type_feeds or missing_weekly or missing_pages or missing_subscriptions:
         details = [
             f"expected {expected_count} journals, generated {actual_count}",
             f"errors: {len(errors)}",
@@ -1985,6 +2026,7 @@ def validate_static_outputs(outputs, sources):
             f"missing type feeds: {', '.join(missing_type_feeds) if missing_type_feeds else 'none'}",
             f"missing weekly files: {', '.join(missing_weekly) if missing_weekly else 'none'}",
             f"missing index pages: {', '.join(missing_pages) if missing_pages else 'none'}",
+            f"missing subscription exports: {', '.join(missing_subscriptions) if missing_subscriptions else 'none'}",
         ]
         if errors:
             details.extend(errors)
@@ -2897,6 +2939,7 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
         <div class="primary-actions">
           <a class="button primary" href="feed.xml">打开总 RSS</a>
           <button class="button" data-copy="feed.xml">复制订阅地址</button>
+          <a class="button" href="subscriptions.opml">下载 OPML 订阅包</a>
           <a class="button" href="papers.html">论文索引</a>
           <a class="button" href="#weekly">本周更新</a>
           <a class="button" href="#topics">按方向订阅</a>
@@ -2910,7 +2953,7 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
           <code id="combined-url">https://xionglingsong.github.io/rss-translation-studies/feed.xml</code>
           <button class="button primary" data-copy="feed.xml">复制</button>
         </div>
-        <div class="mini-note">最近生成：{generated_label}。GitHub Actions 每 6 小时自动刷新。</div>
+        <div class="mini-note">最近生成：{generated_label}。GitHub Actions 每 6 小时自动刷新。<a href="subscriptions.opml">需要按方向、类型或期刊导入？下载 OPML 订阅包。</a></div>
       </div>
     </div>
   </header>
