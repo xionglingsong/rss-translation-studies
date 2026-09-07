@@ -39,6 +39,7 @@ MAX_WORKERS = int(os.environ.get("RSS_MAX_WORKERS", "8"))
 MAX_ITEMS_PER_SOURCE = int(os.environ.get("RSS_MAX_ITEMS_PER_SOURCE", "8"))
 WEEKLY_DAYS = int(os.environ.get("RSS_WEEKLY_DAYS", "7"))
 WEEKLY_FALLBACK_ITEMS = int(os.environ.get("RSS_WEEKLY_FALLBACK_ITEMS", "20"))
+NEW_ITEM_HISTORY_WINDOWS = (7, 30)
 OBSIDIAN_WEEKLY_DIR = os.environ.get(
     "RSS_OBSIDIAN_WEEKLY_DIR",
     "/Users/lingsongxiong/Nutstore Files/Obsidian/claudesidian-0.13.1/01_Projects/译了么/公众号/RSS",
@@ -1217,6 +1218,10 @@ def cdata(value):
 
 def item_body(item):
     meta = []
+    if item.get("discovered_at"):
+        meta.append(f"<p><strong>First discovered:</strong> {html.escape(item['discovered_at'])}</p>")
+    if item.get("publication_date"):
+        meta.append(f"<p><strong>Published:</strong> {html.escape(item['publication_date'])}</p>")
     if item.get("source_title"):
         meta.append(f"<p><strong>Journal:</strong> {html.escape(item['source_title'])}</p>")
     if item.get("creator"):
@@ -1314,7 +1319,17 @@ def item_identity(item):
 
 def track_new_items(cache, items, generated_at):
     seen_items = cache.setdefault("_seen_items", {})
+    recent_items = cache.setdefault("_recent_items", {})
     tracking_active = bool(seen_items)
+    retention_cutoff = generated_at - timedelta(days=max(NEW_ITEM_HISTORY_WINDOWS))
+    for key, entry in list(recent_items.items()):
+        try:
+            first_seen_at = datetime.fromisoformat(entry.get("first_seen_at", ""))
+        except ValueError:
+            first_seen_at = datetime.min.replace(tzinfo=timezone.utc)
+        if first_seen_at < retention_cutoff:
+            recent_items.pop(key, None)
+
     new_items = []
     for item in items:
         identity = item_identity(item)
@@ -1327,8 +1342,29 @@ def track_new_items(cache, items, generated_at):
             seen_items[key] = entry
             if tracking_active:
                 new_items.append(item)
+                recent_items[key] = {"first_seen_at": entry["first_seen_at"], "item": item}
         item["first_seen_at"] = entry["first_seen_at"]
     return new_items, tracking_active
+
+
+def recent_discovery_items(cache, generated_at, days):
+    cutoff = generated_at - timedelta(days=days)
+    recent_items = cache.get("_recent_items", {})
+    items = []
+    for entry in recent_items.values():
+        try:
+            first_seen_at = datetime.fromisoformat(entry.get("first_seen_at", ""))
+        except ValueError:
+            continue
+        item = entry.get("item")
+        if not isinstance(item, dict) or first_seen_at < cutoff:
+            continue
+        history_item = dict(item)
+        history_item["publication_date"] = history_item.get("date")
+        history_item["date"] = entry["first_seen_at"]
+        history_item["discovered_at"] = entry["first_seen_at"]
+        items.append(history_item)
+    return items
 
 
 def item_primary_topic(item):
@@ -1830,6 +1866,9 @@ def build_subscriptions_opml(stats, topic_stats, type_stats, new_feed_stats, key
     new_item_outlines = [
         feed_outline("全部首次收录论文", new_feed_stats["feed"], "每次刷新首次识别到的论文。")
     ] + [
+        feed_outline(window["label"], window["feed"], f"近 {window['days']} 天首次收录的论文。")
+        for window in new_feed_stats["windows"]
+    ] + [
         feed_outline(topic["label"], topic["feed"], f"首次收录的{topic['label']}论文。")
         for topic in new_feed_stats["topics"]
     ]
@@ -2004,13 +2043,24 @@ def generate_all_feeds():
                 "item_count": len(topic_items),
             }
         )
-    new_feed_stats = {"feed": "new.xml", "count": len(new_items), "tracking_active": update_tracking_active, "topics": []}
+    new_feed_stats = {"feed": "new.xml", "count": len(new_items), "tracking_active": update_tracking_active, "windows": [], "topics": []}
     outputs[new_feed_stats["feed"]] = build_rss(
         "Newly Discovered Translation Studies Articles",
         "https://xionglingsong.github.io/rss-translation-studies/new.xml",
         "Articles first discovered during the most recent successful refresh.",
         new_items,
     )
+    for days in NEW_ITEM_HISTORY_WINDOWS:
+        window_items = recent_discovery_items(cache, generated_at, days)
+        feed_name = f"new-{days}d.xml"
+        outputs[feed_name] = build_rss(
+            f"Translation Studies Articles Newly Discovered in {days} Days",
+            f"https://xionglingsong.github.io/rss-translation-studies/{feed_name}",
+            f"Articles first discovered by this service in the last {days} days.",
+            window_items,
+        )
+        new_feed_stats["windows"].append({"days": days, "label": f"近 {days} 天新增", "feed": feed_name, "item_count": len(window_items)})
+
     for topic in TOPICS:
         topic_new_items = [item for item in new_items if topic["slug"] in item.get("source_tags", [])]
         feed_name = new_topic_feed_name(topic["slug"])
@@ -2149,7 +2199,7 @@ def validate_static_outputs(outputs, sources):
     subscriptions_opml = manifest.get("subscriptions_opml", "")
     missing_subscriptions = [subscriptions_opml] if subscriptions_opml and subscriptions_opml not in outputs else []
     new_items_manifest = manifest.get("new_items") or {}
-    new_item_feeds = [new_items_manifest.get("feed", "")] + [topic.get("feed", "") for topic in new_items_manifest.get("topics", [])]
+    new_item_feeds = [new_items_manifest.get("feed", "")] + [window.get("feed", "") for window in new_items_manifest.get("windows", [])] + [topic.get("feed", "") for topic in new_items_manifest.get("topics", [])]
     missing_new_item_feeds = [feed for feed in new_item_feeds if feed and feed not in outputs]
     missing_keyword_feeds = [alert.get("feed", "") for alert in manifest.get("keyword_alerts", []) if alert.get("feed") not in outputs]
     if errors or actual_count != expected_count or missing_feeds or missing_topic_feeds or missing_type_feeds or missing_weekly or missing_pages or missing_subscriptions or missing_new_item_feeds or missing_keyword_feeds:
@@ -2238,6 +2288,16 @@ def build_public_index(stats, topic_stats, type_stats, errors, item_count, gener
         </article>
         '''
     ]
+    for window in new_feed_stats["windows"]:
+        new_feed_cards.append(
+            f'''
+            <article class="topic-card">
+              <div><h3>{html.escape(window["label"])}</h3><p>保留近 {window["days"]} 天首次收录的论文；不会因错过一次刷新而遗漏。</p></div>
+              <div class="topic-meta"><span>{window["item_count"]} 条论文</span></div>
+              <div class="topic-actions"><a class="icon-button" href="{html.escape(window["feed"])}">RSS</a><button class="icon-button" data-copy="{html.escape(window["feed"])}">Copy</button></div>
+            </article>
+            '''
+        )
     for topic in new_feed_stats["topics"]:
         new_feed_cards.append(
             f'''
